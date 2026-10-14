@@ -24,4 +24,27 @@ def health():
 
 @app.get("/")
 def home(request: Request):
-    return templates.TemplateResponse(request, "home.html")
+    return templates.TemplateResponse(
+        request,
+        "home.html",
+        {
+            "page": "live",
+            "subtitle": "Live matches. Updates every 30 seconds.",
+            "endpoint": "/matches/live",
+            "empty_text": "No live matches right now.",
+        },
+    )
+
+
+@app.get("/fixtures")
+def fixtures(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "home.html",
+        {
+            "page": "fixtures",
+            "subtitle": "Today's matches. Updates every 30 seconds.",
+            "endpoint": "/matches/today",
+            "empty_text": "No matches today in the competitions we cover.",
+        },
+    )

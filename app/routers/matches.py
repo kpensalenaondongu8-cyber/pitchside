@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.football_client import fetch_live_matches
+from app.football_client import ProviderError, fetch_live_matches, fetch_today_matches
 from app.models import Match
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -34,7 +34,19 @@ async def live_matches(db: Session = Depends(get_db)):
     """Matches being played right now."""
     try:
         matches = await fetch_live_matches()
-    except httpx.HTTPError as error:
+    except (httpx.HTTPError, ProviderError) as error:
+        raise HTTPException(status_code=502, detail=f"Football API error: {error}")
+    save_matches(db, matches)
+    return matches
+
+
+# This must stay ABOVE "/{api_id}", otherwise FastAPI treats "today" as an id.
+@router.get("/today")
+async def today_matches(db: Session = Depends(get_db)):
+    """Today's matches: scheduled, live and finished."""
+    try:
+        matches = await fetch_today_matches()
+    except (httpx.HTTPError, ProviderError) as error:
         raise HTTPException(status_code=502, detail=f"Football API error: {error}")
     save_matches(db, matches)
     return matches
