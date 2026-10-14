@@ -8,7 +8,6 @@ from app.routers import matches
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Create the database tables on startup (Alembic migrations come later).
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Pitchside")
