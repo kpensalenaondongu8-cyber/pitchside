@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pitchside</title>
+  <style>
+    :root { --bg: #0b1f14; --card: #123423; --accent: #2ee66b; --text: #eef7f0; --muted: #8fb09b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 20px 16px; border-bottom: 1px solid #1d4a31; }
+    header h1 { margin: 0; font-size: 1.5rem; }
+    header h1 span { color: var(--accent); }
+    header p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px; }
+    .match { background: var(--card); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+    .comp { color: var(--muted); font-size: .8rem; margin-bottom: 8px; }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+    .score { font-weight: 700; font-size: 1.2rem; }
+    .live { color: var(--accent); font-size: .75rem; font-weight: 700; }
+    .empty, .error { color: var(--muted); text-align: center; padding: 40px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Pitch<span>side</span></h1>
+    <p>Live matches. Updates every 30 seconds.</p>
+  </header>
+  <main id="matches"><p class="empty">Loading matches...</p></main>
+
+  <script>
+    const container = document.getElementById("matches");
+
+    function esc(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function render(matches) {
+      if (!matches.length) {
+        container.innerHTML = '<p class="empty">No live matches right now.</p>';
+        return;
+      }
+      container.innerHTML = matches.map(m => `
+        <div class="match">
+          <div class="comp">${esc(m.competition)} · <span class="live">${esc(m.status)}</span></div>
+          <div class="row"><span>${esc(m.home_team)}</span><span class="score">${m.home_score ?? "-"}</span></div>
+          <div class="row"><span>${esc(m.away_team)}</span><span class="score">${m.away_score ?? "-"}</span></div>
+        </div>`).join("");
+    }
+
+    async function load() {
+      try {
+        const response = await fetch("/matches/live");
+        if (!response.ok) throw new Error("Request failed");
+        render(await response.json());
+      } catch (error) {
+        container.innerHTML = '<p class="error">Could not load matches. Retrying...</p>';
+      }
+    }
+
+    load();
+    setInterval(load, 30000);
+  </script>
+</body>
+</html>
