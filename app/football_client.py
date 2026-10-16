@@ -20,8 +20,6 @@ class ProviderError(Exception):
     """The provider answered, but reported a problem (bad key, daily limit, ...)."""
 
 
-# One cache entry per kind of request:
-# {"live": {"time": ..., "data": [...]}, "today-2026-10-14": {...}}
 _cache = {}
 
 SAMPLE_MATCHES = [

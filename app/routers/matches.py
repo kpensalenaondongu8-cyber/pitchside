@@ -1,7 +1,10 @@
+from typing import Optional
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.competitions import group_by_competition, slugify, sort_matches
 from app.database import SessionLocal
 from app.football_client import ProviderError, fetch_live_matches, fetch_today_matches
 from app.models import Match
@@ -29,27 +32,42 @@ def save_matches(db: Session, matches: list[dict]) -> None:
     db.commit()
 
 
+async def load_matches(fetcher, db: Session) -> list[dict]:
+    """Get matches with the given fetch function, save them, and return them sorted.
+
+    Every route below needs these same steps, so they live here once.
+    Sorting keeps each league's matches together, in kickoff order.
+    """
+    try:
+        matches = await fetcher()
+    except (httpx.HTTPError, ProviderError) as error:
+        raise HTTPException(status_code=502, detail=f"Football API error: {error}")
+    save_matches(db, matches)
+    return sort_matches(matches)
+
+
 @router.get("/live")
 async def live_matches(db: Session = Depends(get_db)):
     """Matches being played right now."""
-    try:
-        matches = await fetch_live_matches()
-    except (httpx.HTTPError, ProviderError) as error:
-        raise HTTPException(status_code=502, detail=f"Football API error: {error}")
-    save_matches(db, matches)
-    return matches
+    return await load_matches(fetch_live_matches, db)
 
 
-# This must stay ABOVE "/{api_id}", otherwise FastAPI treats "today" as an id.
+# Routes with a fixed word (/today, /competitions) must stay ABOVE "/{api_id}",
+# otherwise FastAPI treats the word as an id.
 @router.get("/today")
-async def today_matches(db: Session = Depends(get_db)):
-    """Today's matches: scheduled, live and finished."""
-    try:
-        matches = await fetch_today_matches()
-    except (httpx.HTTPError, ProviderError) as error:
-        raise HTTPException(status_code=502, detail=f"Football API error: {error}")
-    save_matches(db, matches)
+async def today_matches(competition: Optional[str] = None, db: Session = Depends(get_db)):
+    """Today's matches. Add ?competition=<slug> to see only one league."""
+    matches = await load_matches(fetch_today_matches, db)
+    if competition:
+        matches = [m for m in matches if slugify(m["competition"]) == competition]
     return matches
+
+
+@router.get("/competitions")
+async def competitions(db: Session = Depends(get_db)):
+    """Today's competitions with how many matches each has."""
+    matches = await load_matches(fetch_today_matches, db)
+    return group_by_competition(matches)
 
 
 @router.get("/{api_id}")

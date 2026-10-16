@@ -16,8 +16,16 @@ uvicorn app.main:app --reload
 Open http://127.0.0.1:8000 for the home page and http://127.0.0.1:8000/docs for the API docs.
 
 Without an API key the app shows sample matches, so you can build pages right away.
-Get a free key at https://www.football-data.org/client/register and put it in `.env`
-as `FOOTBALL_API_KEY`.
+
+Pitchside supports two data providers, chosen with `FOOTBALL_PROVIDER` in `.env`:
+
+- `api-football` (default): worldwide leagues. Get a key at https://dashboard.api-football.com
+  and set `API_FOOTBALL_KEY`. The free plan allows 100 requests per day, so keep
+  `CACHE_SECONDS` at 900 or more.
+- `football-data`: 12 competitions on the free plan. Get a key at
+  https://www.football-data.org/client/register and set `FOOTBALL_API_KEY`.
+
+If you switch provider, delete `pitchside.db` once, because the two providers use different match ids.
 
 ## Project structure
 
@@ -28,7 +36,8 @@ app/
   database.py        SQLAlchemy engine and session
   models.py          Database tables (Match for now)
   football_client.py Fetches and caches live matches from the API
-  routers/matches.py /matches/live and /matches/{api_id}
+  competitions.py    Groups matches by league (slugs, top-league ordering)
+  routers/matches.py /matches/live, /matches/today, /matches/competitions, /matches/{api_id}
   templates/home.html
 ```
 
