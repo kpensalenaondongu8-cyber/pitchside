@@ -258,6 +258,66 @@
                 padding: 12px;
             }
         }
+        .supporter-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid #2b3545;
+}
+
+.supporter-info {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+
+.supporter-status {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.supporter-status.online {
+    background: #22c55e;
+}
+
+.supporter-status.offline {
+    background: #94a3b8;
+}
+
+.supporter-name {
+    overflow-wrap: anywhere;
+}
+
+.supporter-state {
+    display: block;
+    margin-top: 3px;
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.message-user-button {
+    border: none;
+    border-radius: 6px;
+    padding: 7px 12px;
+    background: #f97316;
+    color: white;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.message-user-button:hover {
+    background: #ea580c;
+}
+
+.message-user-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
     </style>
 </head>
 
@@ -277,16 +337,15 @@
 
             <!-- Online supporters are separate from the messages container -->
             <section class="online-panel">
-                <div class="online-heading">
-                    <span class="online-dot"></span>
-                    Active Supporters
-                </div>
+    <div class="online-heading">
+        <span class="online-dot"></span>
+        Pitchside Supporters
+    </div>
 
-                <ul id="online-users" aria-live="polite">
-                    <li class="online-empty">Connecting...</li>
-                </ul>
-            </section>
-
+    <ul id="online-users" aria-live="polite">
+        <li class="online-empty">Loading supporters...</li>
+    </ul>
+</section>
             <!-- Only chat messages belong inside this container -->
             <div id="messages" aria-live="polite">
                 <p id="empty-state">Loading messages...</p>
@@ -400,26 +459,76 @@
 
         /* Update the online supporters list. */
 
-        function renderOnlineUsers(users) {
-            onlineUsersContainer.replaceChildren();
+       async function renderOnlineUsers() {
+    const usersContainer = document.getElementById("online-users");
 
-            if (!Array.isArray(users) || users.length === 0) {
-                const empty = document.createElement("li");
+    try {
+        const response = await fetch("/chat/users");
 
-                empty.className = "online-empty";
-                empty.textContent = "No supporters online.";
-
-                onlineUsersContainer.appendChild(empty);
-                return;
-            }
-
-            for (const username of users) {
-                const item = document.createElement("li");
-
-                item.textContent = username;
-                onlineUsersContainer.appendChild(item);
-            }
+        if (!response.ok) {
+            throw new Error("Could not load supporters.");
         }
+
+        const data = await response.json();
+
+        usersContainer.replaceChildren();
+
+        if (data.users.length === 0) {
+            const emptyMessage = document.createElement("li");
+            emptyMessage.className = "online-empty";
+            emptyMessage.textContent = "No other supporters yet.";
+
+            usersContainer.appendChild(emptyMessage);
+            return;
+        }
+
+        for (const user of data.users) {
+            const item = document.createElement("li");
+            item.className = "supporter-item";
+
+            const info = document.createElement("div");
+            info.className = "supporter-info";
+
+            const indicator = document.createElement("span");
+            indicator.className = user.online
+                ? "supporter-status online"
+                : "supporter-status offline";
+
+            const details = document.createElement("div");
+
+            const name = document.createElement("span");
+            name.className = "supporter-name";
+            name.textContent = user.username;
+
+            const status = document.createElement("span");
+            status.className = "supporter-state";
+            status.textContent = user.online ? "Online" : "Offline";
+
+            details.append(name, status);
+            info.append(indicator, details);
+
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "message-user-button";
+            button.textContent = "Message";
+            button.disabled = true;
+            button.title = "Private messaging is coming next";
+
+            item.append(info, button);
+            usersContainer.appendChild(item);
+        }
+    } catch (error) {
+        usersContainer.replaceChildren();
+
+        const errorMessage = document.createElement("li");
+        errorMessage.className = "online-empty";
+        errorMessage.textContent = "Unable to load supporters. Please refresh.";
+
+        usersContainer.appendChild(errorMessage);
+
+        console.error(error);
+    }
+}
 
         /* Connect to the WebSocket server. */
 

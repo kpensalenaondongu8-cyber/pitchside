@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Private Messages | Pitchside</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #101820;
+            color: #f5f7fa;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 22px;
+            background: #182630;
+            border-bottom: 1px solid #2d3b46;
+        }
+
+        header h1 {
+            margin: 0;
+            color: #54e38e;
+            font-size: 22px;
+        }
+
+        header a {
+            color: #54e38e;
+            text-decoration: none;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr);
+            gap: 18px;
+            max-width: 1200px;
+            height: calc(100dvh - 75px);
+            min-height: 400px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+
+        .sidebar,
+        .chat-panel {
+            min-width: 0;
+            background: #182630;
+            border: 1px solid #2d3b46;
+            border-radius: 12px;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-top {
+            padding: 16px;
+            border-bottom: 1px solid #2d3b46;
+        }
+
+        .sidebar-top h2 {
+            margin: 0 0 14px;
+            font-size: 18px;
+        }
+
+        button {
+            cursor: pointer;
+            border: 0;
+            border-radius: 7px;
+            padding: 11px 14px;
+            font-weight: bold;
+        }
+
+        .primary-button {
+            width: 100%;
+            color: #102018;
+            background: #54e38e;
+        }
+
+        .primary-button:hover {
+            background: #37cc74;
+        }
+
+        #conversation-list {
+            overflow-y: auto;
+        }
+
+        .conversation {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            text-align: left;
+            color: #f5f7fa;
+            background: transparent;
+            border-radius: 0;
+            border-bottom: 1px solid #2d3b46;
+        }
+
+        .conversation:hover,
+        .conversation.active {
+            background: #253943;
+        }
+
+        .conversation small {
+            display: block;
+            margin-top: 5px;
+            color: #aab8c2;
+            font-weight: normal;
+        }
+
+        .chat-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 17px;
+            border-bottom: 1px solid #2d3b46;
+        }
+
+        .chat-header h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        #status {
+            margin-top: 7px;
+            color: #aab8c2;
+            font-size: 13px;
+        }
+
+        #messages {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            gap: 12px;
+            padding: 18px;
+            overflow-y: auto;
+        }
+
+        .empty-state {
+            margin: auto;
+            color: #aab8c2;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .message {
+            max-width: 80%;
+            align-self: flex-start;
+            padding: 11px 13px;
+            background: #253943;
+            border-radius: 12px 12px 12px 3px;
+            overflow-wrap: anywhere;
+        }
+
+        .message.mine {
+            align-self: flex-end;
+            background: #176b45;
+            border-radius: 12px 12px 3px 12px;
+        }
+
+        .message .sender {
+            margin-bottom: 5px;
+            color: #aeeec8;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .message .text {
+            white-space: pre-wrap;
+            line-height: 1.45;
+        }
+
+        .message time {
+            display: block;
+            margin-top: 7px;
+            color: #d0ded7;
+            font-size: 11px;
+        }
+
+        #message-form {
+            display: flex;
+            gap: 10px;
+            padding: 14px;
+            border-top: 1px solid #2d3b46;
+        }
+
+        #message-input {
+            flex: 1;
+            min-width: 0;
+            padding: 12px;
+            color: #f5f7fa;
+            background: #101820;
+            border: 1px solid #3b4d59;
+            border-radius: 8px;
+            outline: none;
+        }
+
+        #message-input:focus {
+            border-color: #54e38e;
+        }
+
+        #send-button {
+            color: #102018;
+            background: #54e38e;
+        }
+
+        #send-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .notice {
+            padding: 10px 14px;
+            color: #f5d58b;
+            font-size: 13px;
+        }
+
+        @media (max-width: 650px) {
+            header {
+                padding: 14px;
+            }
+
+            header h1 {
+                font-size: 19px;
+            }
+
+            .container {
+                display: flex;
+                flex-direction: column;
+                height: auto;
+                min-height: calc(100dvh - 60px);
+                padding: 10px;
+                gap: 10px;
+            }
+
+            .sidebar {
+                flex: none;
+                max-height: 220px;
+            }
+
+            .sidebar-top {
+                padding: 12px;
+            }
+
+            #conversation-list {
+                min-height: 0;
+            }
+
+            .chat-panel {
+                flex: 1;
+                min-height: 55dvh;
+            }
+
+            .message {
+                max-width: 90%;
+            }
+
+            #message-form {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Pitchside</h1>
+
+    <nav>
+        <a href="/">Matches</a>
+        &nbsp; | &nbsp;
+        <a href="/chat">Group Chat</a>
+    </nav>
+</header>
+
+<main class="container">
+
+    <aside class="sidebar">
+        <div class="sidebar-top">
+            <h2>Private Messages</h2>
+
+            <button
+                id="new-conversation-button"
+                class="primary-button"
+                type="button"
+            >
+                + New Conversation
+            </button>
+        </div>
+
+        <div id="conversation-list">
+            <p class="notice">Loading conversations...</p>
+        </div>
+    </aside>
+
+    <section class="chat-panel">
+
+        <div class="chat-header">
+            <h2 id="chat-title">Select a conversation</h2>
+            <div id="status">Your private messages appear here.</div>
+        </div>
+
+        <div id="messages" aria-live="polite">
+            <p class="empty-state">
+                Choose a conversation or start a new one.
+            </p>
+        </div>
+
+        <div id="notice" class="notice" role="status"></div>
+
+        <form id="message-form">
+            <input
+                id="message-input"
+                type="text"
+                maxlength="1000"
+                placeholder="Write a message..."
+                autocomplete="off"
+                aria-label="Your message"
+                disabled
+                required
+            >
+
+            <button id="send-button" type="submit" disabled>
+                Send
+            </button>
+        </form>
+
+    </section>
+
+</main>
+
+<script>
+    const conversationList = document.getElementById(
+        "conversation-list"
+    );
+
+    const messagesContainer = document.getElementById("messages");
+
+    const chatTitle = document.getElementById("chat-title");
+
+    const statusText = document.getElementById("status");
+
+    const notice = document.getElementById("notice");
+
+    const messageForm = document.getElementById("message-form");
+
+    const messageInput = document.getElementById("message-input");
+
+    const sendButton = document.getElementById("send-button");
+
+    const newConversationButton = document.getElementById(
+        "new-conversation-button"
+    );
+
+    let currentUser = null;
+    let activeConversationId = null;
+    let conversations = [];
+    let refreshTimer = null;
+
+
+    // Make API requests and handle authentication errors.
+    async function apiRequest(url, options = {}) {
+        const response = await fetch(url, {
+            credentials: "same-origin",
+            ...options,
+            headers: {
+                ...(options.headers || {}),
+            },
+        });
+
+        if (response.status === 401) {
+            window.location.href =
+                "/auth/login?next=/private/messages";
+
+            throw new Error("Please log in again.");
+        }
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(
+                data.detail || "Something went wrong."
+            );
+        }
+
+        return data;
+    }
+
+
+    // Display a notice to the user.
+    function showNotice(message) {
+        notice.textContent = message;
+    }
+
+
+    // Format a message timestamp.
+    function formatTime(value) {
+        if (!value) {
+            return "";
+        }
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return "";
+        }
+
+        return date.toLocaleString();
+    }
+
+
+    // Display conversations in the sidebar.
+    function renderConversations() {
+        conversationList.replaceChildren();
+
+        if (conversations.length === 0) {
+            const empty = document.createElement("p");
+
+            empty.className = "notice";
+            empty.textContent = "No conversations yet.";
+
+            conversationList.appendChild(empty);
+
+            return;
+        }
+
+        for (const conversation of conversations) {
+            const button = document.createElement("button");
+
+            button.type = "button";
+            button.className = "conversation";
+
+            if (conversation.id === activeConversationId) {
+                button.classList.add("active");
+            }
+
+            const username = document.createElement("strong");
+
+            username.textContent =
+                conversation.other_user.username;
+
+            const subtitle = document.createElement("small");
+
+            subtitle.textContent = "Private conversation";
+
+            button.append(username, subtitle);
+
+            button.addEventListener("click", async () => {
+                await openConversation(conversation.id);
+            });
+
+            conversationList.appendChild(button);
+        }
+    }
+
+
+    // Load the current user's conversations.
+    async function loadConversations() {
+        const data = await apiRequest("/private/conversations");
+
+        conversations = data.conversations;
+
+        renderConversations();
+    }
+
+
+    // Load and display messages in the selected conversation.
+    async function loadMessages() {
+        if (activeConversationId === null) {
+            return;
+        }
+
+        const conversationId = activeConversationId;
+
+        const data = await apiRequest(
+            `/private/conversations/${conversationId}/messages`
+        );
+
+        // Avoid rendering old results if another conversation
+        // was selected while the request was in progress.
+        if (conversationId !== activeConversationId) {
+            return;
+        }
+
+        messagesContainer.replaceChildren();
+
+        if (data.messages.length === 0) {
+            const empty = document.createElement("p");
+
+            empty.className = "empty-state";
+            empty.textContent = "No messages yet. Say hello!";
+
+            messagesContainer.appendChild(empty);
+
+            return;
+        }
+
+        for (const message of data.messages) {
+            const bubble = document.createElement("div");
+
+            bubble.className = "message";
+
+            if (message.sender_id === currentUser.id) {
+                bubble.classList.add("mine");
+            }
+
+            const sender = document.createElement("div");
+
+            sender.className = "sender";
+            sender.textContent =
+                message.sender_id === currentUser.id
+                    ? "You"
+                    : message.username;
+
+            const text = document.createElement("div");
+
+            text.className = "text";
+
+            // textContent prevents message text from being
+            // interpreted as HTML.
+            text.textContent = message.message;
+
+            const time = document.createElement("time");
+
+            time.textContent = formatTime(message.created_at);
+
+            bubble.append(sender, text, time);
+
+            messagesContainer.appendChild(bubble);
+        }
+
+        messagesContainer.scrollTop =
+            messagesContainer.scrollHeight;
+    }
+
+
+    // Open a conversation.
+    async function openConversation(conversationId) {
+        activeConversationId = conversationId;
+
+        const conversation = conversations.find(
+            item => item.id === conversationId
+        );
+
+        chatTitle.textContent = conversation
+            ? conversation.other_user.username
+            : "Private Conversation";
+
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+
+        showNotice("");
+
+        renderConversations();
+
+        try {
+            await loadMessages();
+        } catch (error) {
+            showNotice(error.message);
+        }
+
+        // Refresh the selected conversation periodically.
+        // This provides polling, not a WebSocket connection.
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+        }
+
+        refreshTimer = setInterval(async () => {
+            try {
+                await loadMessages();
+            } catch (error) {
+                showNotice(error.message);
+            }
+        }, 3000);
+    }
+
+
+    // Start a conversation using another user's username.
+    async function startConversation() {
+        const username = prompt(
+            "Enter the exact username of the person you want to message:"
+        );
+
+        if (username === null) {
+            return;
+        }
+
+        const requestedUsername = username.trim();
+
+        if (!requestedUsername) {
+            showNotice("Enter a username first.");
+            return;
+        }
+
+        if (
+            requestedUsername.toLowerCase() ===
+            currentUser.username.toLowerCase()
+        ) {
+            showNotice("You cannot message yourself.");
+            return;
+        }
+
+        try {
+            // The existing /chat/users route provides other users.
+            const usersData = await apiRequest("/chat/users");
+
+            const users = Array.isArray(usersData)
+                ? usersData
+                : usersData.users || [];
+
+            const otherUser = users.find(
+                user =>
+                    user.username.toLowerCase() ===
+                    requestedUsername.toLowerCase()
+            );
+
+            if (!otherUser) {
+                showNotice(
+                    "User not found. Check the username and try again."
+                );
+
+                return;
+            }
+
+            const data = await apiRequest(
+                `/private/conversations?other_user_id=${otherUser.id}`,
+                {
+                    method: "POST",
+                }
+            );
+
+            await loadConversations();
+
+            await openConversation(data.id);
+
+        } catch (error) {
+            showNotice(error.message);
+        }
+    }
+
+
+    // Send a private message.
+    messageForm.addEventListener("submit", async event => {
+        event.preventDefault();
+
+        if (activeConversationId === null) {
+            showNotice("Select a conversation first.");
+            return;
+        }
+
+        const message = messageInput.value.trim();
+
+        if (!message) {
+            showNotice("Enter a message first.");
+            return;
+        }
+
+        sendButton.disabled = true;
+        showNotice("");
+
+        try {
+            const conversationId = activeConversationId;
+
+            await apiRequest(
+                `/private/conversations/${conversationId}/messages`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+
+                    body: JSON.stringify({
+                        message: message,
+                    }),
+                }
+            );
+
+            messageInput.value = "";
+
+            await loadMessages();
+
+        } catch (error) {
+            showNotice(error.message);
+
+        } finally {
+            sendButton.disabled =
+                activeConversationId === null;
+
+            messageInput.focus();
+        }
+    });
+
+
+    // New conversation button.
+    newConversationButton.addEventListener(
+        "click",
+        startConversation
+    );
+
+
+    // Initialise the page.
+    async function initialise() {
+        try {
+            currentUser = await apiRequest("/auth/me");
+
+            await loadConversations();
+
+            if (conversations.length > 0) {
+                await openConversation(conversations[0].id);
+            }
+
+        } catch (error) {
+            showNotice(error.message);
+        }
+    }
+
+
+    initialise();
+</script>
+
+</body>
+</html>

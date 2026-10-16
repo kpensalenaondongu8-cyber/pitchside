@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.database import Base, engine
 from app import models  # Register all SQLAlchemy models before create_all.
-from app.routers import auth, matches
+from app.routers import auth, matches, private_chat
 from app.routers import chat
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -84,6 +84,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.include_router(matches.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(private_chat.router)
 
 
 def render_page(request: Request, page: str, subtitle: str, endpoint: str, empty_text: str, slug: str = ""):

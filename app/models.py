@@ -51,3 +51,56 @@ class User(Base):
     username = Column(String(30), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     auth_version = Column(Integer, nullable=False, default=0)
+
+class PrivateConversation(Base):
+    __tablename__ = "private_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_one_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    user_two_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class PrivateMessage(Base):
+    __tablename__ = "private_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    conversation_id = Column(
+        Integer,
+        ForeignKey("private_conversations.id"),
+        nullable=False,
+        index=True,
+    )
+
+    sender_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    message = Column(String(1000), nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )    
