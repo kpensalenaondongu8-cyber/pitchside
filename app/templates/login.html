@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | Pitchside</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #101820;
+            color: white;
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        main {
+            background: #1c2935;
+            padding: 30px;
+            border-radius: 12px;
+            width: min(350px, calc(100% - 60px));
+        }
+
+        input, button {
+            box-sizing: border-box;
+            width: 100%;
+            padding: 12px;
+            margin-top: 12px;
+            border-radius: 6px;
+        }
+
+        input { border: 1px solid #52616b; }
+
+        button {
+            background: #35b86b;
+            color: white;
+            border: 0;
+            cursor: pointer;
+        }
+
+        #message { overflow-wrap: anywhere; }
+        a { color: #65d995; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Welcome Back</h1>
+    <p>Log in to your Pitchside account.</p>
+
+    <form id="login-form">
+        <input
+            name="username"
+            placeholder="Username"
+            minlength="3"
+            maxlength="30"
+            autocomplete="username"
+            required
+        >
+
+        <input
+            name="password"
+            type="password"
+            placeholder="Password"
+            minlength="8"
+            maxlength="128"
+            autocomplete="current-password"
+            required
+        >
+
+        <button type="submit">Log in</button>
+    </form>
+
+    <p id="message" role="status"></p>
+    <p>New to Pitchside? <a href="/auth/register">Create an account</a></p>
+    <p><a href="/">Back to Pitchside</a></p>
+</main>
+
+<script>
+document.getElementById("login-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const message = document.getElementById("message");
+    const data = Object.fromEntries(new FormData(form));
+
+    try {
+        const response = await fetch("/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            message.textContent = result.detail || "Login failed.";
+            return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get("next");
+
+        window.location.href =
+        next && next.startsWith("/") && !next.startsWith("//")
+        ? next
+        : "/";    } catch {
+        message.textContent = "Unable to connect. Please try again.";
+    }
+});
+</script>
+</body>
+</html>
