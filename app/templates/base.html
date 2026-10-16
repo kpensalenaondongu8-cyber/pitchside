@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1f14">
+  <title>{% block title %}Pitchside{% endblock %}</title>
+  <style>
+    :root { --bg: #0b1f14; --card: #123423; --card-hover: #17432d; --accent: #2ee66b; --text: #eef7f0; --muted: #8fb09b; color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; line-height: 1.4; background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* One centered column. The header and the page content both use it, so they line up on any screen.
+       env(safe-area-inset-*) keeps text clear of phone notches and rounded corners. */
+    .wrap {
+      max-width: 640px; margin: 0 auto;
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+    }
+    header { padding-top: max(20px, env(safe-area-inset-top)); border-bottom: 1px solid #1d4a31; }
+    header h1 { margin: 0; font-size: 1.5rem; }
+    header h1 span { color: var(--accent); }
+    header p { margin: 4px 0 0; color: var(--muted); font-size: .95rem; }
+    nav { display: flex; gap: 24px; margin-top: 8px; overflow-x: auto; }
+    nav a {
+      display: flex; align-items: center; min-height: 44px; white-space: nowrap;
+      color: var(--muted); text-decoration: none; font-weight: 600; border-bottom: 3px solid transparent;
+    }
+    nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+    main { padding-top: 12px; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+
+    .back { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); text-decoration: none; font-size: .95rem; overflow-wrap: anywhere; }
+    .badge { flex-shrink: 0; white-space: nowrap; font-size: .8rem; font-weight: 700; }
+    .badge.live { color: var(--accent); }
+    .empty, .error { color: var(--muted); text-align: center; padding: 40px 0; }
+
+    /* Each page adds its own styles here. */
+    {% block style %}{% endblock %}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Pitch<span>side</span></h1>
+      <p>{{ subtitle }}</p>
+      <nav>
+        <a href="/" class="{{ 'active' if page in ('leagues', 'league') else '' }}">Leagues</a>
+        <a href="/live" class="{{ 'active' if page == 'live' else '' }}">Live</a>
+        <a href="/fixtures" class="{{ 'active' if page == 'fixtures' else '' }}">Today</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- JavaScript every page can use. -->
+  <script>
+    const REFRESH_MS = 30000; // how often a page asks for fresh data (milliseconds)
+
+    // Make text safe to put inside HTML.
+    function esc(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Turn the API status into the short label fans know: LIVE, HT, FT, or the kickoff time.
+    function statusInfo(m) {
+      const time = new Date(m.kickoff).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      switch (m.status) {
+        case "IN_PLAY": return { text: "LIVE", live: true };
+        case "PAUSED": return { text: "HT", live: true };
+        case "FINISHED": return { text: "FT", live: false };
+        case "SCHEDULED":
+        case "TIMED": return { text: time, live: false };
+        case "POSTPONED": return { text: "Postp.", live: false };
+        default: return { text: m.status, live: false };
+      }
+    }
+  </script>
+  {% block script %}{% endblock %}
+</body>
+</html>

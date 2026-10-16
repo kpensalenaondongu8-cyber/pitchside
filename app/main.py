@@ -9,6 +9,7 @@ from app.routers import matches
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# Create the database tables on startup (Alembic migrations come later).
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Pitchside")
@@ -67,6 +68,16 @@ def fixtures(request: Request):
         subtitle="All of today's matches.",
         endpoint="/matches/today",
         empty_text="No matches today in the competitions we cover.",
+    )
+
+
+@app.get("/match/{api_id}")
+def match_room(request: Request, api_id: int):
+    """The match room. The page loads the match's data itself from /matches/{api_id}."""
+    return templates.TemplateResponse(
+        request,
+        "match.html",
+        {"page": "match", "subtitle": "Match room", "endpoint": f"/matches/{api_id}"},
     )
 
 

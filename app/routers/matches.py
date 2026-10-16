@@ -71,14 +71,24 @@ async def competitions(db: Session = Depends(get_db)):
 
 
 @router.get("/{api_id}")
-def match_detail(api_id: int, db: Session = Depends(get_db)):
-    """One saved match by its API id (the match room page will use this)."""
+async def match_detail(api_id: int, db: Session = Depends(get_db)):
+    """One match by its API id. The match room page uses this.
+
+    First we refresh today's matches, so the score is current. This reuses the shared
+    cache, so it usually costs no API request. If the API is down or out of requests,
+    we carry on with what we saved earlier.
+    """
+    try:
+        await load_matches(fetch_today_matches, db)
+    except HTTPException:
+        pass
     match = db.query(Match).filter(Match.api_id == api_id).first()
     if match is None:
         raise HTTPException(status_code=404, detail="Match not found")
     return {
         "api_id": match.api_id,
         "competition": match.competition,
+        "competition_slug": slugify(match.competition),
         "home_team": match.home_team,
         "away_team": match.away_team,
         "home_score": match.home_score,

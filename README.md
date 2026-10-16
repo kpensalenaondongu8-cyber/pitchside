@@ -38,7 +38,9 @@ app/
   football_client.py Fetches and caches live matches from the API
   competitions.py    Groups matches by league (slugs, top-league ordering)
   routers/matches.py /matches/live, /matches/today, /matches/competitions, /matches/{api_id}
-  templates/home.html
+  templates/base.html   Shared layout, styles and helpers (every page extends it)
+  templates/home.html   Leagues, Live, Today and single-league pages
+  templates/match.html  The match room
 ```
 
 ## Next steps

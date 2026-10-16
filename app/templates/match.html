@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Match room · Pitchside{% endblock %}
+
+{% block style %}
+.scoreboard { margin-top: 4px; padding: 16px; background: var(--card); border-radius: 12px; text-align: center; }
+.sb-status { font-size: .8rem; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+.sb-status.live { color: var(--accent); }
+/* Three columns: home team, score, away team. Long names wrap inside their column. */
+.sb-teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin: 14px 0; }
+.sb-team { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.sb-score { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sb-score.live { color: var(--accent); }
+.sb-score.vs { font-size: 1.1rem; font-weight: 400; color: var(--muted); }
+.sb-meta { color: var(--muted); font-size: .85rem; }
+/* Small phones: tighter spacing so long team names wrap between words, not inside them. */
+@media (max-width: 380px) {
+  .scoreboard { padding: 14px 10px; }
+  .sb-teams { gap: 8px; }
+  .sb-team { font-size: .9rem; }
+  .sb-score { font-size: 1.6rem; }
+}
+.soon { margin: 16px 0 0; padding: 14px 16px; border: 1px dashed #1d4a31; border-radius: 12px; color: var(--muted); text-align: center; font-size: .9rem; }
+{% endblock %}
+
+{% block content %}
+<div id="content"><p class="empty">Loading...</p></div>
+{% endblock %}
+
+{% block script %}
+<script>
+  const ENDPOINT = {{ endpoint | tojson }};
+  const container = document.getElementById("content");
+
+  // The scoreboard has room for the full words.
+  const LONG_STATUS = {
+    IN_PLAY: "LIVE", PAUSED: "HALF TIME", FINISHED: "FULL TIME",
+    TIMED: "NOT STARTED", SCHEDULED: "NOT STARTED", POSTPONED: "POSTPONED",
+  };
+
+  function render(m) {
+    const live = m.status === "IN_PLAY" || m.status === "PAUSED";
+    const hasScore = m.home_score != null && m.away_score != null;
+    const score = hasScore ? `${m.home_score} - ${m.away_score}` : "vs";
+    const kickoff = new Date(m.kickoff).toLocaleString([], {
+      weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
+    });
+    document.title = `${m.home_team} vs ${m.away_team} · Pitchside`;
+    container.innerHTML = `
+      <a class="back" href="/league/${encodeURIComponent(m.competition_slug)}">&larr; ${esc(m.competition)}</a>
+      <section class="scoreboard">
+        <div class="sb-status${live ? " live" : ""}">${esc(LONG_STATUS[m.status] || m.status)}</div>
+        <div class="sb-teams">
+          <div class="sb-team">${esc(m.home_team)}</div>
+          <div class="sb-score${live ? " live" : ""}${hasScore ? "" : " vs"}">${score}</div>
+          <div class="sb-team">${esc(m.away_team)}</div>
+        </div>
+        <div class="sb-meta">Kickoff ${esc(kickoff)}</div>
+      </section>
+      <p class="soon">Match events, lineups and live chat are coming soon.</p>`;
+  }
+
+  async function load() {
+    try {
+      const response = await fetch(ENDPOINT);
+      if (response.status === 404) {
+        container.innerHTML = '<p class="empty">Match not found.<br><a class="back" href="/">&larr; Back to leagues</a></p>';
+        return;
+      }
+      if (!response.ok) throw new Error("Request failed");
+      render(await response.json());
+    } catch (error) {
+      container.innerHTML = '<p class="error">Could not load this match. Retrying...</p>';
+    }
+  }
+
+  load();
+  setInterval(load, REFRESH_MS);
+</script>
+{% endblock %}

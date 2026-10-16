@@ -1,201 +1,131 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b1f14">
-  <title>Pitchside</title>
-  <style>
-    :root { --bg: #0b1f14; --card: #123423; --card-hover: #17432d; --accent: #2ee66b; --text: #eef7f0; --muted: #8fb09b; color-scheme: dark; }
-    * { box-sizing: border-box; }
-    html { -webkit-text-size-adjust: 100%; }
-    body {
-      margin: 0; line-height: 1.4; background: var(--bg); color: var(--text);
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      -webkit-tap-highlight-color: transparent;
+{% extends "base.html" %}
+
+{% block style %}
+.title { margin: 0 0 12px; font-size: 1.25rem; overflow-wrap: anywhere; }
+
+/* A small heading above each league's matches (Live and Today pages). */
+.group { margin: 16px 0 6px; font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }
+.group:first-child { margin-top: 4px; }
+
+/* A match is a compact row: status on the left, the two teams and their scores on the right.
+   min-width: 0 lets long names wrap inside the row instead of pushing the page sideways. */
+.match { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; padding: 8px 12px; background: var(--card); border-radius: 10px; color: inherit; text-decoration: none; }
+.match:active { background: var(--card-hover); }
+@media (hover: hover) { .match:hover, .league:hover { background: var(--card-hover); } }
+.status { font-size: .75rem; font-weight: 700; text-align: center; color: var(--muted); overflow-wrap: anywhere; }
+.status.live { color: var(--accent); }
+.side { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 1px 0; line-height: 1.25; }
+.team { min-width: 0; font-size: .95rem; overflow-wrap: anywhere; }
+.score { flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.score.live { color: var(--accent); }
+.score.none { color: var(--muted); font-weight: 400; }
+
+.league {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  min-height: 56px; padding: 12px 16px; margin-bottom: 10px;
+  background: var(--card); border-radius: 12px; color: var(--text); text-decoration: none;
+}
+.league:active { background: var(--card-hover); }
+.league .name { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.league .meta { display: flex; align-items: center; flex-shrink: 0; gap: 10px; color: var(--muted); font-size: .9rem; white-space: nowrap; }
+.league .arrow { color: var(--accent); font-size: 1.3rem; margin-left: auto; }
+/* On phones, put the league name on its own line and the match count underneath. */
+@media (max-width: 480px) {
+  .league { flex-wrap: wrap; row-gap: 2px; }
+  .league .name { flex: 1 1 100%; }
+  .league .meta { width: 100%; }
+}
+{% endblock %}
+
+{% block content %}
+{% if page == 'league' %}
+<a class="back" href="/">&larr; All leagues</a>
+<h2 class="title" id="league-title"></h2>
+{% endif %}
+<div id="content"><p class="empty">Loading...</p></div>
+{% endblock %}
+
+{% block script %}
+<script>
+  const PAGE = {{ page | tojson }};
+  const ENDPOINT = {{ endpoint | tojson }};
+  const EMPTY_TEXT = {{ empty_text | tojson }};
+  const container = document.getElementById("content");
+
+  // One team's line: name on the left, score on the right ("-" if the match hasn't started).
+  function side(name, score, live) {
+    const scoreHtml = score == null
+      ? '<span class="score none">-</span>'
+      : `<span class="score${live ? " live" : ""}">${score}</span>`;
+    return `<div class="side"><span class="team">${esc(name)}</span>${scoreHtml}</div>`;
+  }
+
+  // One match row. The whole row is a link to that match's room.
+  function matchRow(m) {
+    const s = statusInfo(m);
+    return `
+      <a class="match" href="/match/${m.api_id}">
+        <span class="status${s.live ? " live" : ""}">${esc(s.text)}</span>
+        <div class="sides">${side(m.home_team, m.home_score, s.live)}${side(m.away_team, m.away_score, s.live)}</div>
+      </a>`;
+  }
+
+  // The Leagues page: one clickable card per competition.
+  function renderLeagues(leagues) {
+    container.innerHTML = leagues.map(c => `
+      <a class="league" href="/league/${encodeURIComponent(c.slug)}">
+        <span class="name">${esc(c.name)}</span>
+        <span class="meta">
+          ${c.live ? `<span class="badge live">${c.live} LIVE</span>` : ""}
+          <span>${c.total} ${c.total === 1 ? "match" : "matches"}</span>
+          <span class="arrow">&rsaquo;</span>
+        </span>
+      </a>`).join("");
+  }
+
+  // The Live, Today and single-league pages: compact match rows.
+  function renderMatches(matches) {
+    if (PAGE === "league") {
+      container.innerHTML = matches.map(matchRow).join("");
+      return;
     }
-
-    /* One centered column. The header and the page content both use it, so they line up on any screen.
-       env(safe-area-inset-*) keeps text clear of phone notches and rounded corners. */
-    .wrap {
-      max-width: 640px; margin: 0 auto;
-      padding-left: max(16px, env(safe-area-inset-left));
-      padding-right: max(16px, env(safe-area-inset-right));
+    // Live and Today: a small heading for each league, then that league's matches.
+    // The server already sorted them, so each league's matches sit together.
+    const groups = new Map();
+    for (const m of matches) {
+      if (!groups.has(m.competition)) groups.set(m.competition, []);
+      groups.get(m.competition).push(m);
     }
-    header { padding-top: max(20px, env(safe-area-inset-top)); border-bottom: 1px solid #1d4a31; }
-    header h1 { margin: 0; font-size: 1.5rem; }
-    header h1 span { color: var(--accent); }
-    header p { margin: 4px 0 0; color: var(--muted); font-size: .95rem; }
-    nav { display: flex; gap: 24px; margin-top: 8px; overflow-x: auto; }
-    nav a {
-      display: flex; align-items: center; min-height: 44px; white-space: nowrap;
-      color: var(--muted); text-decoration: none; font-weight: 600; border-bottom: 3px solid transparent;
+    container.innerHTML = [...groups].map(([name, list]) =>
+      `<h3 class="group">${esc(name)}</h3>${list.map(matchRow).join("")}`).join("");
+  }
+
+  function render(data) {
+    if (PAGE === "league") {
+      document.getElementById("league-title").textContent = data.length ? data[0].competition : "";
     }
-    nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
-    main { padding-top: 12px; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
-
-    .back { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); text-decoration: none; font-size: .95rem; }
-    .title { margin: 0 0 12px; font-size: 1.25rem; overflow-wrap: anywhere; }
-
-    /* A small heading above each league's matches (Live and Today pages). */
-    .group { margin: 16px 0 6px; font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }
-    .group:first-child { margin-top: 4px; }
-
-    /* A match is a compact row: status on the left, the two teams and their scores on the right.
-       min-width: 0 lets long names wrap inside the row instead of pushing the page sideways. */
-    .match { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; padding: 8px 12px; background: var(--card); border-radius: 10px; }
-    .status { font-size: .75rem; font-weight: 700; text-align: center; color: var(--muted); overflow-wrap: anywhere; }
-    .status.live { color: var(--accent); }
-    .side { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 1px 0; line-height: 1.25; }
-    .team { min-width: 0; font-size: .95rem; overflow-wrap: anywhere; }
-    .score { flex-shrink: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .score.live { color: var(--accent); }
-    .score.none { color: var(--muted); font-weight: 400; }
-
-    .badge { flex-shrink: 0; white-space: nowrap; font-size: .8rem; font-weight: 700; }
-    .badge.live { color: var(--accent); }
-
-    .league {
-      display: flex; justify-content: space-between; align-items: center; gap: 12px;
-      min-height: 56px; padding: 12px 16px; margin-bottom: 10px;
-      background: var(--card); border-radius: 12px; color: var(--text); text-decoration: none;
+    if (!data.length) {
+      container.innerHTML = `<p class="empty">${esc(EMPTY_TEXT)}</p>`;
+      return;
     }
-    .league:active { background: var(--card-hover); }
-    @media (hover: hover) { .league:hover { background: var(--card-hover); } }
-    .league .name { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
-    .league .meta { display: flex; align-items: center; flex-shrink: 0; gap: 10px; color: var(--muted); font-size: .9rem; white-space: nowrap; }
-    .league .arrow { color: var(--accent); font-size: 1.3rem; margin-left: auto; }
-    /* On phones, put the league name on its own line and the match count underneath. */
-    @media (max-width: 480px) {
-      .league { flex-wrap: wrap; row-gap: 2px; }
-      .league .name { flex: 1 1 100%; }
-      .league .meta { width: 100%; }
+    if (PAGE === "leagues") {
+      renderLeagues(data);
+    } else {
+      renderMatches(data);
     }
+  }
 
-    .empty, .error { color: var(--muted); text-align: center; padding: 40px 0; }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="wrap">
-      <h1>Pitch<span>side</span></h1>
-      <p>{{ subtitle }}</p>
-      <nav>
-        <a href="/" class="{{ 'active' if page in ('leagues', 'league') else '' }}">Leagues</a>
-        <a href="/live" class="{{ 'active' if page == 'live' else '' }}">Live</a>
-        <a href="/fixtures" class="{{ 'active' if page == 'fixtures' else '' }}">Today</a>
-      </nav>
-    </div>
-  </header>
-  <main class="wrap">
-    {% if page == 'league' %}
-    <a class="back" href="/">&larr; All leagues</a>
-    <h2 class="title" id="league-title"></h2>
-    {% endif %}
-    <div id="content"><p class="empty">Loading...</p></div>
-  </main>
-
-  <script>
-    const PAGE = {{ page | tojson }};
-    const ENDPOINT = {{ endpoint | tojson }};
-    const EMPTY_TEXT = {{ empty_text | tojson }};
-    const REFRESH_MS = 15000; // how often the page asks for fresh data (milliseconds)
-    const container = document.getElementById("content");
-
-    function esc(text) {
-      const div = document.createElement("div");
-      div.textContent = text;
-      return div.innerHTML;
+  async function load() {
+    try {
+      const response = await fetch(ENDPOINT);
+      if (!response.ok) throw new Error("Request failed");
+      render(await response.json());
+    } catch (error) {
+      container.innerHTML = '<p class="error">Could not load matches. Retrying...</p>';
     }
+  }
 
-    // Turn the API status into the short label fans know: LIVE, HT, FT, or the kickoff time.
-    function statusInfo(m) {
-      const time = new Date(m.kickoff).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-      switch (m.status) {
-        case "IN_PLAY": return { text: "LIVE", live: true };
-        case "PAUSED": return { text: "HT", live: true };
-        case "FINISHED": return { text: "FT", live: false };
-        case "SCHEDULED":
-        case "TIMED": return { text: time, live: false };
-        case "POSTPONED": return { text: "Postp.", live: false };
-        default: return { text: m.status, live: false };
-      }
-    }
-
-    // One team's line: name on the left, score on the right ("-" if the match hasn't started).
-    function side(name, score, live) {
-      const scoreHtml = score == null
-        ? '<span class="score none">-</span>'
-        : `<span class="score${live ? " live" : ""}">${score}</span>`;
-      return `<div class="side"><span class="team">${esc(name)}</span>${scoreHtml}</div>`;
-    }
-
-    function matchRow(m) {
-      const s = statusInfo(m);
-      return `
-        <div class="match">
-          <span class="status${s.live ? " live" : ""}">${esc(s.text)}</span>
-          <div class="sides">${side(m.home_team, m.home_score, s.live)}${side(m.away_team, m.away_score, s.live)}</div>
-        </div>`;
-    }
-
-    // The Leagues page: one clickable card per competition.
-    function renderLeagues(leagues) {
-      container.innerHTML = leagues.map(c => `
-        <a class="league" href="/league/${encodeURIComponent(c.slug)}">
-          <span class="name">${esc(c.name)}</span>
-          <span class="meta">
-            ${c.live ? `<span class="badge live">${c.live} LIVE</span>` : ""}
-            <span>${c.total} ${c.total === 1 ? "match" : "matches"}</span>
-            <span class="arrow">&rsaquo;</span>
-          </span>
-        </a>`).join("");
-    }
-
-    // The Live, Today and single-league pages: compact match rows.
-    function renderMatches(matches) {
-      if (PAGE === "league") {
-        container.innerHTML = matches.map(matchRow).join("");
-        return;
-      }
-      // Live and Today: a small heading for each league, then that league's matches.
-      // The server already sorted them, so each league's matches sit together.
-      const groups = new Map();
-      for (const m of matches) {
-        if (!groups.has(m.competition)) groups.set(m.competition, []);
-        groups.get(m.competition).push(m);
-      }
-      container.innerHTML = [...groups].map(([name, list]) =>
-        `<h3 class="group">${esc(name)}</h3>${list.map(matchRow).join("")}`).join("");
-    }
-
-    function render(data) {
-      if (PAGE === "league") {
-        document.getElementById("league-title").textContent = data.length ? data[0].competition : "";
-      }
-      if (!data.length) {
-        container.innerHTML = `<p class="empty">${esc(EMPTY_TEXT)}</p>`;
-        return;
-      }
-      if (PAGE === "leagues") {
-        renderLeagues(data);
-      } else {
-        renderMatches(data);
-      }
-    }
-
-    async function load() {
-      try {
-        const response = await fetch(ENDPOINT);
-        if (!response.ok) throw new Error("Request failed");
-        render(await response.json());
-      } catch (error) {
-        container.innerHTML = '<p class="error">Could not load matches. Retrying...</p>';
-      }
-    }
-
-    load();
-    setInterval(load, REFRESH_MS);
-  </script>
-</body>
-</html>
+  load();
+  setInterval(load, REFRESH_MS);
+</script>
+{% endblock %}
