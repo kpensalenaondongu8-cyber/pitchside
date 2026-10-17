@@ -22,8 +22,15 @@ def get_db():
 
 def save_matches(db: Session, matches: list[dict]) -> None:
     """Insert new matches and update ones we already have."""
+    if not matches:
+        return
+    ids = [data["api_id"] for data in matches]
+    existing = {
+        m.api_id: m
+        for m in db.query(Match).filter(Match.api_id.in_(ids)).all()
+    }
     for data in matches:
-        match = db.query(Match).filter(Match.api_id == data["api_id"]).first()
+        match = existing.get(data["api_id"])
         if match is None:
             db.add(Match(**data))
         else:
@@ -31,20 +38,19 @@ def save_matches(db: Session, matches: list[dict]) -> None:
                 setattr(match, key, value)
     db.commit()
 
-
+_last_saved = {}   # fetcher name -> the list we last saved to the database
 async def load_matches(fetcher, db: Session) -> list[dict]:
-    """Get matches with the given fetch function, save them, and return them sorted.
-
-    Every route below needs these same steps, so they live here once.
-    Sorting keeps each league's matches together, in kickoff order.
-    """
+    """Get matches with the given fetch function, save them, and return them sorted."""
     try:
         matches = await fetcher()
     except (httpx.HTTPError, ProviderError) as error:
         raise HTTPException(status_code=502, detail=f"Football API error: {error}")
-    save_matches(db, matches)
-    return sort_matches(matches)
 
+    # The cache returns the same list until it refreshes, so only save fresh data.
+    if _last_saved.get(fetcher.__name__) is not matches:
+        save_matches(db, matches)
+        _last_saved[fetcher.__name__] = matches
+    return sort_matches(matches)
 
 @router.get("/live")
 async def live_matches(db: Session = Depends(get_db)):

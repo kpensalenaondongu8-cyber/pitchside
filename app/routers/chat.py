@@ -19,7 +19,30 @@ from app.models import ChatMessage, User
 from app.routers.auth import get_current_user, get_db
 from app.security import COOKIE_NAME, read_auth_token
 
+import time
+from collections import defaultdict, deque
 
+
+class RateLimiter:
+    """Allow at most max_events per per_seconds for each key (such as a user id)."""
+
+    def __init__(self, max_events: int, per_seconds: float):
+        self.max_events = max_events
+        self.per_seconds = per_seconds
+        self._events = defaultdict(deque)
+
+    def allow(self, key) -> bool:
+        now = time.monotonic()
+        events = self._events[key]
+        while events and now - events[0] > self.per_seconds:
+            events.popleft()
+        if len(events) >= self.max_events:
+            return False
+        events.append(now)
+        return True
+
+
+message_limiter = RateLimiter(max_events=5, per_seconds=10)
 router = APIRouter(tags=["Chat"])
 
 templates = Jinja2Templates(directory="app/templates")

@@ -7,6 +7,7 @@ Two providers are supported, chosen with FOOTBALL_PROVIDER in .env:
 If the chosen provider has no API key, sample matches are returned so the app
 still runs and you can build pages before you have a key.
 """
+import asyncio
 
 import time
 from datetime import datetime, timezone
@@ -20,6 +21,11 @@ class ProviderError(Exception):
     """The provider answered, but reported a problem (bad key, daily limit, ...)."""
 
 
+_locks = {}
+_blocked_until = 0.0            # don't call the provider before this time
+quota = {"remaining": None, "day": None}
+
+TTL = {"live": 45, "today": 300}   # seconds; tune these
 _cache = {}
 
 SAMPLE_MATCHES = [
@@ -121,7 +127,7 @@ def _provider_key() -> str:
         return config.FOOTBALL_API_KEY
     return config.API_FOOTBALL_KEY
 
-
+    
 async def _call_provider(kind: str, day: str) -> list[dict]:
     """Make one real request to the provider. kind is "live" or "today"."""
     key = _provider_key()
@@ -138,6 +144,10 @@ async def _call_provider(kind: str, day: str) -> list[dict]:
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(url, params=params, headers=headers)
         response.raise_for_status()
+        remaining = response.headers.get("x-ratelimit-requests-remaining")
+    if remaining is not None:
+        quota["remaining"] = int(remaining)
+        quota["day"] = day
     data = response.json()
 
     if config.FOOTBALL_PROVIDER == "football-data":
@@ -148,27 +158,43 @@ async def _call_provider(kind: str, day: str) -> list[dict]:
         raise ProviderError(f"API-Football: {data['errors']}")
     return [_normalize_api_football(m) for m in data.get("response", [])]
 
-
 async def _fetch_matches(kind: str) -> list[dict]:
     """Return matches, reusing a recent answer so we respect the rate limit."""
+    global _blocked_until
     day = datetime.now(timezone.utc).date().isoformat()
     cache_key = "live" if kind == "live" else f"today-{day}"
+    ttl = TTL[kind]
 
     cached = _cache.get(cache_key)
-    if cached and time.time() - cached["time"] < config.CACHE_SECONDS:
+    if cached and time.time() - cached["time"] < ttl:
         return cached["data"]
 
-    try:
-        matches = await _call_provider(kind, day)
-    except (httpx.HTTPError, ProviderError):
-        # Out of requests or the API is down: show the last good answer if we have one.
-        if cached:
+    lock = _locks.setdefault(cache_key, asyncio.Lock())
+    async with lock:                      # one provider call per key at a time
+        cached = _cache.get(cache_key)    # someone may have refreshed it while we waited
+        if cached and time.time() - cached["time"] < ttl:
             return cached["data"]
-        raise
 
-    _cache[cache_key] = {"time": time.time(), "data": matches}
-    return matches
+        low_quota = (
+            quota["day"] == day
+            and quota["remaining"] is not None
+            and quota["remaining"] <= 5
+        )
+        if time.time() < _blocked_until or low_quota:
+            if cached:
+                return cached["data"]
+            raise ProviderError("Provider paused: recent error or quota almost used up")
 
+        try:
+            matches = await _call_provider(kind, day)
+        except (httpx.HTTPError, ProviderError):
+            _blocked_until = time.time() + 60   # back off for a minute
+            if cached:
+                return cached["data"]
+            raise
+
+        _cache[cache_key] = {"time": time.time(), "data": matches}
+        return matches
 
 async def fetch_live_matches() -> list[dict]:
     """Return matches that are being played right now."""
