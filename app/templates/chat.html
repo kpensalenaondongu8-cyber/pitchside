@@ -94,8 +94,7 @@
 
         #online-users {
             display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
+            flex-direction: column;
             list-style: none;
             padding: 0;
             margin: 0;
@@ -114,6 +113,73 @@
             color: #aab6c5;
             background: transparent;
             padding-left: 0;
+        }
+
+        /* Individual supporters */
+
+        .supporter-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid #2b3545;
+        }
+
+        .supporter-info {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            min-width: 0;
+        }
+
+        .supporter-status {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .supporter-status.online {
+            background: #22c55e;
+        }
+
+        .supporter-status.offline {
+            background: #94a3b8;
+        }
+
+        .supporter-name {
+            color: #80e0a7;
+            text-decoration: none;
+            font-weight: bold;
+            overflow-wrap: anywhere;
+            cursor: pointer;
+        }
+
+        .supporter-name:hover {
+            color: #bbf7d0;
+            text-decoration: underline;
+        }
+
+        .supporter-state {
+            display: block;
+            margin-top: 3px;
+            color: #94a3b8;
+            font-size: 12px;
+        }
+
+        .message-user-button {
+            border: none;
+            border-radius: 6px;
+            padding: 7px 12px;
+            background: #f97316;
+            color: white;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .message-user-button:hover {
+            background: #ea580c;
         }
 
         /* Chat messages */
@@ -257,67 +323,11 @@
             #send-button {
                 padding: 12px;
             }
+
+            .message-user-button {
+                padding: 7px 10px;
+            }
         }
-        .supporter-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 0;
-    border-bottom: 1px solid #2b3545;
-}
-
-.supporter-info {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    min-width: 0;
-}
-
-.supporter-status {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.supporter-status.online {
-    background: #22c55e;
-}
-
-.supporter-status.offline {
-    background: #94a3b8;
-}
-
-.supporter-name {
-    overflow-wrap: anywhere;
-}
-
-.supporter-state {
-    display: block;
-    margin-top: 3px;
-    color: #94a3b8;
-    font-size: 12px;
-}
-
-.message-user-button {
-    border: none;
-    border-radius: 6px;
-    padding: 7px 12px;
-    background: #f97316;
-    color: white;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.message-user-button:hover {
-    background: #ea580c;
-}
-
-.message-user-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
     </style>
 </head>
 
@@ -335,22 +345,26 @@
                 <p>Talk football with other Pitchside supporters.</p>
             </div>
 
-            <!-- Online supporters are separate from the messages container -->
+            <!-- Supporters list -->
             <section class="online-panel">
-    <div class="online-heading">
-        <span class="online-dot"></span>
-        Pitchside Supporters
-    </div>
+                <div class="online-heading">
+                    <span class="online-dot"></span>
+                    Pitchside Supporters
+                </div>
 
-    <ul id="online-users" aria-live="polite">
-        <li class="online-empty">Loading supporters...</li>
-    </ul>
-</section>
-            <!-- Only chat messages belong inside this container -->
+                <ul id="online-users" aria-live="polite">
+                    <li class="online-empty">
+                        Loading supporters...
+                    </li>
+                </ul>
+            </section>
+
+            <!-- Group chat messages -->
             <div id="messages" aria-live="polite">
                 <p id="empty-state">Loading messages...</p>
             </div>
 
+            <!-- Group chat form -->
             <form id="chat-form">
                 <input
                     id="message-input"
@@ -390,7 +404,21 @@
 
         const displayedMessageIds = new Set();
 
-        /* Display one chat message. */
+        /*
+         * Open a private conversation with a selected supporter.
+         * The user's ID identifies the correct account.
+         */
+        function openPrivateChat(userId) {
+            if (userId === undefined || userId === null) {
+                console.error("The selected user has no ID.");
+                return;
+            }
+
+            window.location.href =
+                `/private/messages?user_id=${encodeURIComponent(userId)}`;
+        }
+
+        /* Display one group chat message. */
 
         function addMessage(message) {
             if (displayedMessageIds.has(message.id)) {
@@ -441,7 +469,7 @@
                 messagesContainer.scrollHeight;
         }
 
-        /* Show a message when the chat history is empty. */
+        /* Show an empty-state message when there are no messages. */
 
         function showEmptyState() {
             if (messagesContainer.children.length > 0) {
@@ -457,80 +485,103 @@
             messagesContainer.appendChild(empty);
         }
 
-        /* Update the online supporters list. */
+        /* Load and display the supporters list. */
 
-       async function renderOnlineUsers() {
-    const usersContainer = document.getElementById("online-users");
+        async function renderOnlineUsers() {
+            try {
+                const response = await fetch("/chat/users", {
+                    credentials: "same-origin"
+                });
 
-    try {
-        const response = await fetch("/chat/users");
+                if (!response.ok) {
+                    throw new Error("Could not load supporters.");
+                }
 
-        if (!response.ok) {
-            throw new Error("Could not load supporters.");
+                const data = await response.json();
+
+                onlineUsersContainer.replaceChildren();
+
+                if (!data.users || data.users.length === 0) {
+                    const emptyMessage = document.createElement("li");
+
+                    emptyMessage.className = "online-empty";
+                    emptyMessage.textContent = "No other supporters yet.";
+
+                    onlineUsersContainer.appendChild(emptyMessage);
+                    return;
+                }
+
+                for (const user of data.users) {
+                    const item = document.createElement("li");
+                    item.className = "supporter-item";
+
+                    const info = document.createElement("div");
+                    info.className = "supporter-info";
+
+                    const indicator = document.createElement("span");
+
+                    indicator.className = user.online
+                        ? "supporter-status online"
+                        : "supporter-status offline";
+
+                    const details = document.createElement("div");
+
+                    /*
+                     * The username is a link.
+                     * Clicking it opens a private chat with this user.
+                     */
+                    const name = document.createElement("a");
+
+                    name.className = "supporter-name";
+                    name.textContent = user.username;
+                    name.href =
+                        `/private/messages?user_id=${encodeURIComponent(user.id)}`;
+
+                    name.title = `Send a private message to ${user.username}`;
+
+                    const status = document.createElement("span");
+
+                    status.className = "supporter-state";
+                    status.textContent = user.online
+                        ? "Online"
+                        : "Offline";
+
+                    details.append(name, status);
+                    info.append(indicator, details);
+
+                    /*
+                     * The Message button opens the same private chat.
+                     */
+                    const button = document.createElement("button");
+
+                    button.type = "button";
+                    button.className = "message-user-button";
+                    button.textContent = "Message";
+                    button.title = `Message ${user.username} privately`;
+
+                    button.addEventListener("click", function () {
+                        openPrivateChat(user.id);
+                    });
+
+                    item.append(info, button);
+                    onlineUsersContainer.appendChild(item);
+                }
+            } catch (error) {
+                onlineUsersContainer.replaceChildren();
+
+                const errorMessage = document.createElement("li");
+
+                errorMessage.className = "online-empty";
+                errorMessage.textContent =
+                    "Unable to load supporters. Please refresh.";
+
+                onlineUsersContainer.appendChild(errorMessage);
+
+                console.error("Error loading supporters:", error);
+            }
         }
 
-        const data = await response.json();
-
-        usersContainer.replaceChildren();
-
-        if (data.users.length === 0) {
-            const emptyMessage = document.createElement("li");
-            emptyMessage.className = "online-empty";
-            emptyMessage.textContent = "No other supporters yet.";
-
-            usersContainer.appendChild(emptyMessage);
-            return;
-        }
-
-        for (const user of data.users) {
-            const item = document.createElement("li");
-            item.className = "supporter-item";
-
-            const info = document.createElement("div");
-            info.className = "supporter-info";
-
-            const indicator = document.createElement("span");
-            indicator.className = user.online
-                ? "supporter-status online"
-                : "supporter-status offline";
-
-            const details = document.createElement("div");
-
-            const name = document.createElement("span");
-            name.className = "supporter-name";
-            name.textContent = user.username;
-
-            const status = document.createElement("span");
-            status.className = "supporter-state";
-            status.textContent = user.online ? "Online" : "Offline";
-
-            details.append(name, status);
-            info.append(indicator, details);
-
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "message-user-button";
-            button.textContent = "Message";
-            button.disabled = true;
-            button.title = "Private messaging is coming next";
-
-            item.append(info, button);
-            usersContainer.appendChild(item);
-        }
-    } catch (error) {
-        usersContainer.replaceChildren();
-
-        const errorMessage = document.createElement("li");
-        errorMessage.className = "online-empty";
-        errorMessage.textContent = "Unable to load supporters. Please refresh.";
-
-        usersContainer.appendChild(errorMessage);
-
-        console.error(error);
-    }
-}
-
-        /* Connect to the WebSocket server. */
+        /* Connect to the group chat WebSocket. */
 
         function connectWebSocket() {
             manuallyClosed = false;
@@ -571,13 +622,13 @@
                     return;
                 }
 
-                /* Online-status updates */
+                /* Update online supporters when presence changes. */
                 if (data.type === "presence") {
-                    renderOnlineUsers(data.users);
+                    renderOnlineUsers();
                     return;
                 }
 
-                /* Initial chat history */
+                /* Display initial group chat history. */
                 if (data.type === "history") {
                     messagesContainer.replaceChildren();
                     displayedMessageIds.clear();
@@ -590,13 +641,13 @@
                     return;
                 }
 
-                /* New chat message */
+                /* Display a new group chat message. */
                 if (data.type === "message") {
                     addMessage(data.message);
                     return;
                 }
 
-                /* Server-side validation errors */
+                /* Display server-side errors. */
                 if (data.type === "error") {
                     statusElement.textContent =
                         data.detail || "Unable to process message.";
@@ -638,7 +689,7 @@
             });
         }
 
-        /* Send a chat message. */
+        /* Send a group chat message. */
 
         form.addEventListener("submit", function (event) {
             event.preventDefault();
@@ -666,9 +717,12 @@
             input.focus();
         });
 
+        /* Load supporters and start the group chat. */
+
+        renderOnlineUsers();
         connectWebSocket();
 
-        /* Close the connection when leaving the page. */
+        /* Close the WebSocket when leaving the page. */
 
         window.addEventListener("beforeunload", function () {
             manuallyClosed = true;

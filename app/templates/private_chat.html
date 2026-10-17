@@ -39,6 +39,10 @@
             text-decoration: none;
         }
 
+        header a:hover {
+            text-decoration: underline;
+        }
+
         .container {
             display: grid;
             grid-template-columns: 280px minmax(0, 1fr);
@@ -65,34 +69,19 @@
         }
 
         .sidebar-top {
+            flex-shrink: 0;
             padding: 16px;
             border-bottom: 1px solid #2d3b46;
         }
 
         .sidebar-top h2 {
-            margin: 0 0 14px;
+            margin: 0;
             font-size: 18px;
         }
 
-        button {
-            cursor: pointer;
-            border: 0;
-            border-radius: 7px;
-            padding: 11px 14px;
-            font-weight: bold;
-        }
-
-        .primary-button {
-            width: 100%;
-            color: #102018;
-            background: #54e38e;
-        }
-
-        .primary-button:hover {
-            background: #37cc74;
-        }
-
         #conversation-list {
+            flex: 1;
+            min-height: 0;
             overflow-y: auto;
         }
 
@@ -103,13 +92,19 @@
             text-align: left;
             color: #f5f7fa;
             background: transparent;
-            border-radius: 0;
+            border: 0;
             border-bottom: 1px solid #2d3b46;
+            cursor: pointer;
         }
 
         .conversation:hover,
         .conversation.active {
             background: #253943;
+        }
+
+        .conversation strong {
+            display: block;
+            overflow-wrap: anywhere;
         }
 
         .conversation small {
@@ -126,6 +121,7 @@
         }
 
         .chat-header {
+            flex-shrink: 0;
             padding: 17px;
             border-bottom: 1px solid #2d3b46;
         }
@@ -133,6 +129,7 @@
         .chat-header h2 {
             margin: 0;
             font-size: 18px;
+            overflow-wrap: anywhere;
         }
 
         #status {
@@ -141,13 +138,17 @@
             font-size: 13px;
         }
 
+        /* The message area is a vertical flex container. */
         #messages {
             display: flex;
             flex: 1;
             flex-direction: column;
             gap: 12px;
+            min-height: 0;
             padding: 18px;
+            overflow-x: hidden;
             overflow-y: auto;
+            scroll-behavior: smooth;
         }
 
         .empty-state {
@@ -157,17 +158,32 @@
             line-height: 1.6;
         }
 
+        /*
+         * Incoming messages stay on the left.
+         * Explicit width and margin rules make the alignment clearer.
+         */
         .message {
+            display: block;
+            flex: 0 0 auto;
+            width: fit-content;
             max-width: 80%;
+            min-width: 60px;
             align-self: flex-start;
+            margin-right: auto;
+            margin-left: 0;
             padding: 11px 13px;
             background: #253943;
             border-radius: 12px 12px 12px 3px;
             overflow-wrap: anywhere;
         }
 
+        /*
+         * Messages sent by the logged-in user go on the right.
+         */
         .message.mine {
             align-self: flex-end;
+            margin-right: 0;
+            margin-left: auto;
             background: #176b45;
             border-radius: 12px 12px 3px 12px;
         }
@@ -189,10 +205,12 @@
             margin-top: 7px;
             color: #d0ded7;
             font-size: 11px;
+            text-align: right;
         }
 
         #message-form {
             display: flex;
+            flex-shrink: 0;
             gap: 10px;
             padding: 14px;
             border-top: 1px solid #2d3b46;
@@ -216,6 +234,11 @@
         #send-button {
             color: #102018;
             background: #54e38e;
+            border: 0;
+            border-radius: 7px;
+            padding: 11px 14px;
+            font-weight: bold;
+            cursor: pointer;
         }
 
         #send-button:disabled {
@@ -265,6 +288,10 @@
                 min-height: 55dvh;
             }
 
+            #messages {
+                padding: 12px;
+            }
+
             .message {
                 max-width: 90%;
             }
@@ -293,14 +320,6 @@
     <aside class="sidebar">
         <div class="sidebar-top">
             <h2>Private Messages</h2>
-
-            <button
-                id="new-conversation-button"
-                class="primary-button"
-                type="button"
-            >
-                + New Conversation
-            </button>
         </div>
 
         <div id="conversation-list">
@@ -317,7 +336,7 @@
 
         <div id="messages" aria-live="polite">
             <p class="empty-state">
-                Choose a conversation or start a new one.
+                Choose a conversation to view your messages.
             </p>
         </div>
 
@@ -350,27 +369,23 @@
     );
 
     const messagesContainer = document.getElementById("messages");
-
     const chatTitle = document.getElementById("chat-title");
-
     const statusText = document.getElementById("status");
-
     const notice = document.getElementById("notice");
-
     const messageForm = document.getElementById("message-form");
-
     const messageInput = document.getElementById("message-input");
-
     const sendButton = document.getElementById("send-button");
-
-    const newConversationButton = document.getElementById(
-        "new-conversation-button"
-    );
 
     let currentUser = null;
     let activeConversationId = null;
     let conversations = [];
     let refreshTimer = null;
+
+    // Prevent overlapping message requests for the same conversation.
+    const loadingConversations = new Set();
+
+    // Remember the last displayed message data to avoid unnecessary redraws.
+    let lastMessagesSignature = null;
 
 
     // Make API requests and handle authentication errors.
@@ -408,6 +423,18 @@
     }
 
 
+    // Compare IDs consistently, even if one is a string.
+    function sameId(first, second) {
+        return (
+            first !== null &&
+            first !== undefined &&
+            second !== null &&
+            second !== undefined &&
+            String(first) === String(second)
+        );
+    }
+
+
     // Format a message timestamp.
     function formatTime(value) {
         if (!value) {
@@ -435,7 +462,6 @@
             empty.textContent = "No conversations yet.";
 
             conversationList.appendChild(empty);
-
             return;
         }
 
@@ -445,14 +471,14 @@
             button.type = "button";
             button.className = "conversation";
 
-            if (conversation.id === activeConversationId) {
+            if (sameId(conversation.id, activeConversationId)) {
                 button.classList.add("active");
             }
 
             const username = document.createElement("strong");
 
             username.textContent =
-                conversation.other_user.username;
+                conversation.other_user?.username || "User";
 
             const subtitle = document.createElement("small");
 
@@ -473,9 +499,46 @@
     async function loadConversations() {
         const data = await apiRequest("/private/conversations");
 
-        conversations = data.conversations;
+        conversations = Array.isArray(data.conversations)
+            ? data.conversations
+            : [];
 
         renderConversations();
+    }
+
+
+    /*
+     * Identify the message sender.
+     *
+     * First, compare the user IDs.
+     * If the IDs are missing or don't match, check the sender's username
+     * against the logged-in username as a fallback.
+     */
+    function isOwnMessage(message) {
+        if (!currentUser) {
+            return false;
+        }
+
+        const senderId =
+            message.sender_id ??
+            message.user_id ??
+            message.sender?.id;
+
+        if (sameId(senderId, currentUser.id)) {
+            return true;
+        }
+
+        const senderUsername =
+            message.username ??
+            message.sender_username ??
+            message.sender?.username;
+
+        return Boolean(
+            senderUsername &&
+            currentUser.username &&
+            senderUsername.toLowerCase() ===
+                currentUser.username.toLowerCase()
+        );
     }
 
 
@@ -486,159 +549,181 @@
         }
 
         const conversationId = activeConversationId;
+        const conversationKey = String(conversationId);
 
-        const data = await apiRequest(
-            `/private/conversations/${conversationId}/messages`
-        );
-
-        // Avoid rendering old results if another conversation
-        // was selected while the request was in progress.
-        if (conversationId !== activeConversationId) {
+        // Don't send another request while this conversation is loading.
+        if (loadingConversations.has(conversationKey)) {
             return;
         }
 
-        messagesContainer.replaceChildren();
+        loadingConversations.add(conversationKey);
 
-        if (data.messages.length === 0) {
-            const empty = document.createElement("p");
+        try {
+            const data = await apiRequest(
+                `/private/conversations/${conversationId}/messages`
+            );
 
-            empty.className = "empty-state";
-            empty.textContent = "No messages yet. Say hello!";
-
-            messagesContainer.appendChild(empty);
-
-            return;
-        }
-
-        for (const message of data.messages) {
-            const bubble = document.createElement("div");
-
-            bubble.className = "message";
-
-            if (message.sender_id === currentUser.id) {
-                bubble.classList.add("mine");
+            // The user might have switched conversations while waiting.
+            if (!sameId(conversationId, activeConversationId)) {
+                return;
             }
 
-            const sender = document.createElement("div");
+            const messages = Array.isArray(data.messages)
+                ? data.messages
+                : [];
 
-            sender.className = "sender";
-            sender.textContent =
-                message.sender_id === currentUser.id
+            /*
+             * Only redraw the message list when its data changes.
+             * This prevents the interface from repeatedly flickering.
+             */
+            const signature = JSON.stringify(messages);
+
+            if (signature === lastMessagesSignature) {
+                return;
+            }
+
+            const wasAtBottom =
+                messagesContainer.scrollHeight -
+                messagesContainer.scrollTop -
+                messagesContainer.clientHeight < 100;
+
+            const hadMessages =
+                messagesContainer.querySelector(".message") !== null;
+
+            messagesContainer.replaceChildren();
+
+            if (messages.length === 0) {
+                const empty = document.createElement("p");
+
+                empty.className = "empty-state";
+                empty.textContent = "No messages yet. Say hello!";
+
+                messagesContainer.appendChild(empty);
+
+                lastMessagesSignature = signature;
+                return;
+            }
+
+            for (const message of messages) {
+                const bubble = document.createElement("div");
+
+                bubble.className = "message";
+
+                const mine = isOwnMessage(message);
+
+                if (mine) {
+                    bubble.classList.add("mine");
+                }
+
+                const sender = document.createElement("div");
+
+                sender.className = "sender";
+
+                sender.textContent = mine
                     ? "You"
-                    : message.username;
+                    : (
+                        message.username ||
+                        message.sender_username ||
+                        message.sender?.username ||
+                        "User"
+                    );
 
-            const text = document.createElement("div");
+                const text = document.createElement("div");
 
-            text.className = "text";
+                text.className = "text";
+                text.textContent = message.message ?? "";
 
-            // textContent prevents message text from being
-            // interpreted as HTML.
-            text.textContent = message.message;
+                const time = document.createElement("time");
 
-            const time = document.createElement("time");
+                time.textContent = formatTime(message.created_at);
 
-            time.textContent = formatTime(message.created_at);
+                bubble.append(sender, text, time);
 
-            bubble.append(sender, text, time);
+                messagesContainer.appendChild(bubble);
+            }
 
-            messagesContainer.appendChild(bubble);
+            lastMessagesSignature = signature;
+
+            // Scroll down when opening a chat or when already near the bottom.
+            if (!hadMessages || wasAtBottom) {
+                messagesContainer.scrollTop =
+                    messagesContainer.scrollHeight;
+            }
+
+        } finally {
+            loadingConversations.delete(conversationKey);
         }
-
-        messagesContainer.scrollTop =
-            messagesContainer.scrollHeight;
     }
 
 
-    // Open a conversation.
+    // Open a conversation and refresh its messages periodically.
     async function openConversation(conversationId) {
         activeConversationId = conversationId;
 
+        // Force the selected conversation to render its own messages.
+        lastMessagesSignature = null;
+
         const conversation = conversations.find(
-            item => item.id === conversationId
+            item => sameId(item.id, conversationId)
         );
 
         chatTitle.textContent = conversation
-            ? conversation.other_user.username
+            ? conversation.other_user?.username || "Private Conversation"
             : "Private Conversation";
 
         messageInput.disabled = false;
         sendButton.disabled = false;
 
+        statusText.textContent = "Private conversation";
         showNotice("");
 
         renderConversations();
 
+        if (refreshTimer !== null) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+
+        // Load messages immediately instead of waiting for the timer.
         try {
             await loadMessages();
         } catch (error) {
             showNotice(error.message);
         }
 
-        // Refresh the selected conversation periodically.
-        // This provides polling, not a WebSocket connection.
-        if (refreshTimer) {
-            clearInterval(refreshTimer);
-        }
-
+        // Check for new messages every second.
         refreshTimer = setInterval(async () => {
             try {
                 await loadMessages();
             } catch (error) {
                 showNotice(error.message);
             }
-        }, 3000);
+        }, 1000);
     }
 
 
-    // Start a conversation using another user's username.
-    async function startConversation() {
-        const username = prompt(
-            "Enter the exact username of the person you want to message:"
-        );
-
-        if (username === null) {
-            return;
-        }
-
-        const requestedUsername = username.trim();
-
-        if (!requestedUsername) {
-            showNotice("Enter a username first.");
-            return;
-        }
+    // Find an existing conversation or create one using a user ID.
+    async function openConversationWithUser(userId) {
+        const numericUserId = Number(userId);
 
         if (
-            requestedUsername.toLowerCase() ===
-            currentUser.username.toLowerCase()
+            !Number.isInteger(numericUserId) ||
+            numericUserId <= 0
         ) {
+            showNotice("The selected user ID is invalid.");
+            return;
+        }
+
+        if (sameId(numericUserId, currentUser.id)) {
             showNotice("You cannot message yourself.");
             return;
         }
 
         try {
-            // The existing /chat/users route provides other users.
-            const usersData = await apiRequest("/chat/users");
-
-            const users = Array.isArray(usersData)
-                ? usersData
-                : usersData.users || [];
-
-            const otherUser = users.find(
-                user =>
-                    user.username.toLowerCase() ===
-                    requestedUsername.toLowerCase()
-            );
-
-            if (!otherUser) {
-                showNotice(
-                    "User not found. Check the username and try again."
-                );
-
-                return;
-            }
+            showNotice("Opening private conversation...");
 
             const data = await apiRequest(
-                `/private/conversations?other_user_id=${otherUser.id}`,
+                `/private/conversations?other_user_id=${encodeURIComponent(numericUserId)}`,
                 {
                     method: "POST",
                 }
@@ -647,6 +732,13 @@
             await loadConversations();
 
             await openConversation(data.id);
+
+            // Remove the selected user ID from the address bar.
+            window.history.replaceState(
+                {},
+                "",
+                "/private/messages"
+            );
 
         } catch (error) {
             showNotice(error.message);
@@ -670,21 +762,19 @@
             return;
         }
 
+        const conversationId = activeConversationId;
+
         sendButton.disabled = true;
         showNotice("");
 
         try {
-            const conversationId = activeConversationId;
-
             await apiRequest(
                 `/private/conversations/${conversationId}/messages`,
                 {
                     method: "POST",
-
                     headers: {
                         "Content-Type": "application/json",
                     },
-
                     body: JSON.stringify({
                         message: message,
                     }),
@@ -693,6 +783,8 @@
 
             messageInput.value = "";
 
+            // Display the sent message immediately after the server accepts it.
+            lastMessagesSignature = null;
             await loadMessages();
 
         } catch (error) {
@@ -702,25 +794,33 @@
             sendButton.disabled =
                 activeConversationId === null;
 
-            messageInput.focus();
+            if (activeConversationId !== null) {
+                messageInput.focus();
+            }
         }
     });
-
-
-    // New conversation button.
-    newConversationButton.addEventListener(
-        "click",
-        startConversation
-    );
 
 
     // Initialise the page.
     async function initialise() {
         try {
-            currentUser = await apiRequest("/auth/me");
-
+    const userData = await apiRequest("/auth/me");
+    currentUser = userData.user;
             await loadConversations();
 
+            // Check whether Group Chat sent us a selected user ID.
+            const urlParams = new URLSearchParams(
+                window.location.search
+            );
+
+            const selectedUserId = urlParams.get("user_id");
+
+            if (selectedUserId !== null) {
+                await openConversationWithUser(selectedUserId);
+                return;
+            }
+
+            // Open the first existing conversation if one is available.
             if (conversations.length > 0) {
                 await openConversation(conversations[0].id);
             }
@@ -732,6 +832,14 @@
 
 
     initialise();
+
+
+    // Stop polling when the user leaves the page.
+    window.addEventListener("beforeunload", function () {
+        if (refreshTimer !== null) {
+            clearInterval(refreshTimer);
+        }
+    });
 </script>
 
 </body>

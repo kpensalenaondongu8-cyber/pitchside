@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pathlib import Path
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -13,7 +16,16 @@ router = APIRouter(
     prefix="/private",
     tags=["Private Messaging"],
 )
+BASE_DIR = Path(__file__).resolve().parent.parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+@router.get("/messages", response_class=HTMLResponse)
+def private_messages_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="private_chat.html",
+        context={},
+    )
 
 class PrivateMessageInput(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
