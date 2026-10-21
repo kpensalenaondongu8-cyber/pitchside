@@ -26,6 +26,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 # 5 failed logins per 10 minutes for each (IP, username) pair.
 login_failures = RateLimiter(max_events=5, per_seconds=600)
+
 # 10 new accounts per hour for each IP.
 register_limiter = RateLimiter(max_events=10, per_seconds=3600)
 

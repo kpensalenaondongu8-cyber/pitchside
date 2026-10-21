@@ -44,6 +44,28 @@
         #message { overflow-wrap: anywhere; min-height: 20px; }
         #message.error { color: #ff8a80; }
         a { color: #65d995; }
+        .password-wrap {
+    position: relative;
+    margin-top: 12px;
+}
+
+.password-wrap input {
+    margin-top: 0;
+    padding-right: 48px;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: auto;
+    margin: 0;
+    padding: 6px 10px;
+    background: transparent;
+    color: #aab8c4;
+    font-size: 18px;
+}
     </style>
 </head>
 <body>
@@ -86,6 +108,17 @@ const form = document.getElementById("login-form");
 const button = document.getElementById("login-button");
 const message = document.getElementById("message");
 
+const passwordInput = document.querySelector('input[name="password"]');
+const togglePassword = document.getElementById("toggle-password");
+
+togglePassword.addEventListener("click", () => {
+    const showing = passwordInput.type === "text";
+
+    passwordInput.type = showing ? "password" : "text";
+    togglePassword.textContent = showing ? "👁" : "🙈";
+    togglePassword.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    togglePassword.setAttribute("aria-pressed", String(!showing));
+});
 function showMessage(text, isError) {
     message.textContent = text;
     message.className = isError ? "error" : "";
