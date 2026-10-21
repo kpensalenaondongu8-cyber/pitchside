@@ -23,6 +23,7 @@ class ProviderError(Exception):
 _locks = {}
 _blocked_until = 0.0            # don't call the provider before this time
 quota = {"remaining": None, "day": None}
+last_error = {"text": ""}
 
 _cache = {}
 
@@ -180,11 +181,14 @@ async def _fetch_matches(kind: str) -> list[dict]:
         if time.time() < _blocked_until or low_quota:
             if cached:
                 return cached["data"]
-            raise ProviderError("Provider paused: recent error or quota almost used up")
-
+            raise ProviderError(
+                "Provider paused for a minute after this error: "
+                + (last_error["text"] or f"quota almost used up (remaining: {quota['remaining']})")
+            )
         try:
             matches = await _call_provider(kind, day)
-        except (httpx.HTTPError, ProviderError):
+        except (httpx.HTTPError, ProviderError) as error:
+            last_error["text"] = str(error)
             _blocked_until = time.time() + 60   # back off for a minute
             if cached:
                 return cached["data"]
