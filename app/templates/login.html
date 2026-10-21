@@ -85,15 +85,24 @@
             required
         >
 
-        <input
-            name="password"
-            type="password"
-            placeholder="Password"
-            minlength="8"
-            maxlength="128"
-            autocomplete="current-password"
-            required
-        >
+               <div class="password-wrap">
+            <input
+                name="password"
+                type="password"
+                placeholder="Password"
+                minlength="8"
+                maxlength="128"
+                autocomplete="current-password"
+                required
+            >
+            <button
+                type="button"
+                class="toggle-password"
+                id="toggle-password"
+                aria-label="Show password"
+                aria-pressed="false"
+            >👁</button>
+        </div>
 
         <button id="login-button" type="submit">Log in</button>
     </form>
