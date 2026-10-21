@@ -39,7 +39,10 @@
             cursor: pointer;
         }
 
-        #message { overflow-wrap: anywhere; }
+        button:disabled { opacity: 0.6; cursor: wait; }
+
+        #message { overflow-wrap: anywhere; min-height: 20px; }
+        #message.error { color: #ff8a80; }
         a { color: #65d995; }
     </style>
 </head>
@@ -55,6 +58,8 @@
             minlength="3"
             maxlength="30"
             autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
             required
         >
 
@@ -68,21 +73,63 @@
             required
         >
 
-        <button type="submit">Log in</button>
+        <button id="login-button" type="submit">Log in</button>
     </form>
 
-    <p id="message" role="status"></p>
+    <p id="message" role="status" aria-live="polite"></p>
     <p>New to Pitchside? <a href="/auth/register">Create an account</a></p>
     <p><a href="/">Back to Pitchside</a></p>
 </main>
 
 <script>
-document.getElementById("login-form").addEventListener("submit", async (event) => {
+const form = document.getElementById("login-form");
+const button = document.getElementById("login-button");
+const message = document.getElementById("message");
+
+function showMessage(text, isError) {
+    message.textContent = text;
+    message.className = isError ? "error" : "";
+}
+
+/* Only allow redirects to pages on this site. */
+function safeNextUrl() {
+    const next = new URLSearchParams(window.location.search).get("next");
+
+    if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) {
+        return next;
+    }
+
+    return "/";
+}
+
+/* Turn whatever the server sent into one readable sentence. */
+function errorText(status, result) {
+    if (status === 422) {
+        return "Username must be 3 to 30 letters, numbers or underscores, " +
+               "and the password at least 8 characters.";
+    }
+
+    if (result && typeof result.detail === "string") {
+        return result.detail;
+    }
+
+    return "Login failed. Please try again.";
+}
+
+form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const form = event.currentTarget;
-    const message = document.getElementById("message");
     const data = Object.fromEntries(new FormData(form));
+    data.username = data.username.trim();
+
+    button.disabled = true;
+    button.textContent = "Logging in...";
+    showMessage("Logging in, please wait...", false);
+
+    /* If the server is slow, say so instead of looking frozen. */
+    const slowTimer = setTimeout(() => {
+        showMessage("The server is taking a while to respond. Please keep waiting...", false);
+    }, 4000);
 
     try {
         const response = await fetch("/auth/login", {
@@ -92,21 +139,23 @@ document.getElementById("login-form").addEventListener("submit", async (event) =
             body: JSON.stringify(data)
         });
 
-        const result = await response.json();
+        const result = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            message.textContent = result.detail || "Login failed.";
+            showMessage(errorText(response.status, result), true);
             return;
         }
 
-        const params = new URLSearchParams(window.location.search);
-        const next = params.get("next");
+        showMessage("Success! Opening Pitchside...", false);
+        window.location.href = safeNextUrl();
 
-        window.location.href =
-        next && next.startsWith("/") && !next.startsWith("//")
-        ? next
-        : "/";    } catch {
-        message.textContent = "Unable to connect. Please try again.";
+    } catch {
+        showMessage("Could not reach the server. Check your internet connection and try again.", true);
+
+    } finally {
+        clearTimeout(slowTimer);
+        button.disabled = false;
+        button.textContent = "Log in";
     }
 });
 </script>
