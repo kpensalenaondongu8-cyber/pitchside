@@ -8,9 +8,9 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import AUTH_SECRET_KEY
 from app.database import SessionLocal
 from app.models import User
+from app.ratelimit import RateLimiter
 from app.security import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
@@ -23,6 +23,14 @@ from app.security import (
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 templates = Jinja2Templates(directory="app/templates")
+
+# 5 failed logins per 10 minutes for each (IP, username) pair.
+login_failures = RateLimiter(max_events=5, per_seconds=600)
+# 10 new accounts per hour for each IP.
+register_limiter = RateLimiter(max_events=10, per_seconds=3600)
+
+# Used so a login for an unknown username takes as long as one for a real username.
+DUMMY_HASH = hash_password("not-a-real-password")
 
 
 class AuthInput(BaseModel):
@@ -40,6 +48,10 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
 
 def user_response(user: User) -> dict:
@@ -115,9 +127,16 @@ def login_page(request: Request):
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(
     payload: AuthInput,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
+    if not register_limiter.allow(client_ip(request)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many sign-ups from this connection. Please try again later.",
+        )
+
     username = payload.username.strip()
 
     existing_user = (
@@ -158,10 +177,18 @@ def register(
 @router.post("/login")
 def login(
     payload: AuthInput,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
     username = payload.username.strip()
+    key = (client_ip(request), username.lower())
+
+    if login_failures.is_blocked(key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed attempts. Please try again in a few minutes.",
+        )
 
     user = (
         db.query(User)
@@ -169,15 +196,19 @@ def login(
         .first()
     )
 
-    if user is None or not verify_password(
+    password_ok = verify_password(
         payload.password,
-        user.password_hash,
-    ):
+        user.password_hash if user else DUMMY_HASH,
+    )
+
+    if user is None or not password_ok:
+        login_failures.record(key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
         )
 
+    login_failures.reset(key)
     set_auth_cookie(response, user)
 
     return {"user": user_response(user)}

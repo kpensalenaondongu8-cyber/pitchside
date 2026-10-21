@@ -2,83 +2,62 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.database import Base, engine
 from app import models  # Register all SQLAlchemy models before create_all.
-from app.routers import auth, matches, private_chat
-from app.routers import chat
-from fastapi import Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
-
-from app.routers.auth import get_current_user, get_db
+from app.database import Base, SessionLocal, engine
+from app.models import User
+from app.routers import auth, chat, matches, private_chat
+from app.security import COOKIE_NAME, read_auth_token
 
 BASE_DIR = Path(__file__).resolve().parent
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Pitchside")
+# The API docs pages are switched off so the site doesn't publish a map of its routes.
+app = FastAPI(title="Pitchside", docs_url=None, redoc_url=None, openapi_url=None)
+
+PUBLIC_PATHS = {"/health"}
+
+# Calls to these paths come from JavaScript, so they get a JSON 401 instead of a redirect.
+JSON_API_PREFIXES = ("/matches/", "/chat/", "/private/conversations")
+
+
+def not_logged_in(path: str):
+    """JSON 401 for API calls, redirect to the login page for normal pages."""
+    if path.startswith(JSON_API_PREFIXES):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication required."},
+        )
+    return RedirectResponse(url=f"/auth/login?next={quote(path)}", status_code=303)
+
+
 @app.middleware("http")
 async def require_login(request: Request, call_next):
-    public_paths = {
-        "/auth/login",
-        "/auth/register",
-        "/health",
-        "/docs",
-        "/openapi.json",
-        "/redoc",
-    }
-
     path = request.url.path
 
-    if path in public_paths or path.startswith("/auth/"):
+    if path in PUBLIC_PATHS or path.startswith("/auth/"):
         return await call_next(request)
-
-    from app.security import COOKIE_NAME, read_auth_token
-    from app.database import SessionLocal
-    from app.models import User
 
     token = request.cookies.get(COOKIE_NAME)
     token_data = read_auth_token(token) if token else None
 
     if token_data is None:
-        if path.startswith("/matches/") or path.startswith("/chat/"):
-            from fastapi.responses import JSONResponse
-
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Authentication required."},
-            )
-
-        return RedirectResponse(
-            url=f"/auth/login?next={path}",
-            status_code=303,
-        )
+        return not_logged_in(path)
 
     db = SessionLocal()
-
     try:
-        user = db.query(User).filter(User.id == token_data["uid"]).first()
-
+        user = db.get(User, token_data["uid"])
         if user is None or user.auth_version != token_data["v"]:
-            if path.startswith("/matches/") or path.startswith("/chat/"):
-                from fastapi.responses import JSONResponse
-
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Authentication required."},
-                )
-
-            return RedirectResponse(
-                url=f"/auth/login?next={path}",
-                status_code=303,
-            )
-
+            return not_logged_in(path)
     finally:
         db.close()
 
     return await call_next(request)
+
+
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app.include_router(matches.router)

@@ -8,7 +8,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 PBKDF2_ITERATIONS = 600_000
 COOKIE_NAME = "pitchside_auth"
-COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+COOKIE_MAX_AGE = 60 * 60 * 24 * 7  
 
 
 def hash_password(password: str) -> str:

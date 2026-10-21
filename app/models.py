@@ -5,6 +5,18 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 
+from sqlalchemy import UniqueConstraint
+
+class PrivateConversation(Base):
+    __tablename__ = "private_conversations"
+    __table_args__ = (
+        UniqueConstraint("user_one_id", "user_two_id", name="uq_private_pair"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_one_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_two_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False) 
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -51,32 +63,6 @@ class User(Base):
     username = Column(String(30), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     auth_version = Column(Integer, nullable=False, default=0)
-
-class PrivateConversation(Base):
-    __tablename__ = "private_conversations"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    user_one_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=False,
-        index=True,
-    )
-
-    user_two_id = Column(
-        Integer,
-        ForeignKey("users.id"),
-        nullable=False,
-        index=True,
-    )
-
-    created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-
 
 class PrivateMessage(Base):
     __tablename__ = "private_messages"
