@@ -14,38 +14,20 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.config import ALLOWED_ORIGINS
 from app.database import SessionLocal
 from app.models import ChatMessage, User
+from app.ratelimit import RateLimiter
 from app.routers.auth import get_current_user, get_db
 from app.security import COOKIE_NAME, read_auth_token
+from app.timeutils import to_utc_iso
 
-import time
-from collections import defaultdict, deque
-
-
-class RateLimiter:
-    """Allow at most max_events per per_seconds for each key (such as a user id)."""
-
-    def __init__(self, max_events: int, per_seconds: float):
-        self.max_events = max_events
-        self.per_seconds = per_seconds
-        self._events = defaultdict(deque)
-
-    def allow(self, key) -> bool:
-        now = time.monotonic()
-        events = self._events[key]
-        while events and now - events[0] > self.per_seconds:
-            events.popleft()
-        if len(events) >= self.max_events:
-            return False
-        events.append(now)
-        return True
-
-
-message_limiter = RateLimiter(max_events=5, per_seconds=10)
 router = APIRouter(tags=["Chat"])
 
 templates = Jinja2Templates(directory="app/templates")
+
+# 5 group chat messages per 10 seconds for each user.
+message_limiter = RateLimiter(max_events=5, per_seconds=10)
 
 
 class MessageInput(BaseModel):
@@ -71,9 +53,7 @@ class ConnectionManager:
         users = {}
 
         for connection in self.active_connections.values():
-            user_id = connection["user_id"]
-            username = connection["username"]
-            users[user_id] = username
+            users[connection["user_id"]] = connection["username"]
 
         return sorted(users.values(), key=str.casefold)
 
@@ -83,7 +63,7 @@ class ConnectionManager:
         for connection in list(self.active_connections.keys()):
             try:
                 await connection.send_json(data)
-            except (WebSocketDisconnect, RuntimeError):
+            except Exception:
                 disconnected.append(connection)
 
         for connection in disconnected:
@@ -97,6 +77,7 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
 
 @router.get("/chat/users")
 def get_chat_users(
@@ -122,6 +103,8 @@ def get_chat_users(
             for user in users
         ]
     }
+
+
 @router.get("/chat", response_class=HTMLResponse)
 def chat_page(
     request: Request,
@@ -163,7 +146,7 @@ def get_messages(
                 "id": message.id,
                 "username": username,
                 "message": message.message,
-                "created_at": message.created_at.isoformat(),
+                "created_at": to_utc_iso(message.created_at),
             }
             for message, username in messages
         ]
@@ -176,18 +159,18 @@ def send_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if not message_limiter.allow(current_user.id):
+        raise HTTPException(
+            status_code=429,
+            detail="You're sending messages too fast. Please slow down.",
+        )
+
     message_text = payload.message.strip()
 
     if not message_text:
         raise HTTPException(
             status_code=422,
             detail="Message cannot be empty.",
-        )
-
-    if len(message_text) > 1000:
-        raise HTTPException(
-            status_code=422,
-            detail="Message cannot exceed 1000 characters.",
         )
 
     new_message = ChatMessage(
@@ -205,13 +188,18 @@ def send_message(
             "id": new_message.id,
             "username": current_user.username,
             "message": new_message.message,
-            "created_at": new_message.created_at.isoformat(),
+            "created_at": to_utc_iso(new_message.created_at),
         }
     }
 
 
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
+    # Only accept connections that come from our own website.
+    if websocket.headers.get("origin") not in ALLOWED_ORIGINS:
+        await websocket.close(code=4403, reason="Origin not allowed")
+        return
+
     token = websocket.cookies.get(COOKIE_NAME)
     token_data = read_auth_token(token) if token else None
 
@@ -272,7 +260,7 @@ async def websocket_chat(websocket: WebSocket):
                     "id": message.id,
                     "username": message_username,
                     "message": message.message,
-                    "created_at": message.created_at.isoformat(),
+                    "created_at": to_utc_iso(message.created_at),
                 }
                 for message, message_username in history
             ]
@@ -289,6 +277,13 @@ async def websocket_chat(websocket: WebSocket):
 
         while True:
             raw_data = await websocket.receive_text()
+
+            if not message_limiter.allow(user_id):
+                await websocket.send_json({
+                    "type": "error",
+                    "detail": "You're sending messages too fast. Please slow down.",
+                })
+                continue
 
             try:
                 data = json.loads(raw_data)
@@ -348,7 +343,7 @@ async def websocket_chat(websocket: WebSocket):
                     "id": new_message.id,
                     "username": username,
                     "message": new_message.message,
-                    "created_at": new_message.created_at.isoformat(),
+                    "created_at": to_utc_iso(new_message.created_at),
                 }
 
             finally:

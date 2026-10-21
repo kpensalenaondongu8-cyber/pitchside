@@ -8,7 +8,6 @@ If the chosen provider has no API key, sample matches are returned so the app
 still runs and you can build pages before you have a key.
 """
 import asyncio
-
 import time
 from datetime import datetime, timezone
 
@@ -25,8 +24,9 @@ _locks = {}
 _blocked_until = 0.0            # don't call the provider before this time
 quota = {"remaining": None, "day": None}
 
-TTL = {"live": 45, "today": 300}   # seconds; tune these
 _cache = {}
+
+TTL = {"live": config.LIVE_CACHE_SECONDS, "today": config.TODAY_CACHE_SECONDS}
 
 SAMPLE_MATCHES = [
     {
@@ -60,7 +60,6 @@ SAMPLE_MATCHES = [
         "kickoff": "2026-10-14T19:00:00Z",
     },
 ]
-
 # API-Football status codes -> the statuses Pitchside uses everywhere else.
 API_FOOTBALL_STATUS = {
     "TBD": "TIMED",
@@ -125,9 +124,7 @@ def _normalize_api_football(raw: dict) -> dict:
 def _provider_key() -> str:
     if config.FOOTBALL_PROVIDER == "football-data":
         return config.FOOTBALL_API_KEY
-    return config.API_FOOTBALL_KEY
-
-    
+    return config.API_FOOTBALL_KEY   
 async def _call_provider(kind: str, day: str) -> list[dict]:
     """Make one real request to the provider. kind is "live" or "today"."""
     key = _provider_key()
