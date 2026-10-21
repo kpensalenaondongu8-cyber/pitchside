@@ -17,10 +17,12 @@ TODAY_CACHE_SECONDS = int(os.getenv("TODAY_CACHE_SECONDS", "3600"))
 # football-data.org: https://www.football-data.org/client/register
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "")
 FOOTBALL_API_BASE = os.getenv("FOOTBALL_API_BASE", "https://api.football-data.org/v4")
-
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./pitchside.db")
+# Name the driver explicitly: newer SQLAlchemy defaults to "psycopg", but we install psycopg2.
 if DATABASE_URL.startswith("postgres://"):
-      DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # How long (seconds) we reuse an API answer before asking the API again.
 # API-Football's free plan allows only 100 requests per DAY, so keep this high
