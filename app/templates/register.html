@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account | Pitchside</title>
+    <title>Create account | Pitchside</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -39,14 +39,44 @@
             cursor: pointer;
         }
 
-        #message { overflow-wrap: anywhere; }
+        button:disabled { opacity: 0.6; cursor: wait; }
+
+        .hint { color: #aab8c4; font-size: 13px; margin: 8px 0 0; }
+
+        #message { overflow-wrap: anywhere; min-height: 20px; }
+        #message.error { color: #ff8a80; }
         a { color: #65d995; }
+
+        .password-wrap {
+            position: relative;
+            margin-top: 12px;
+        }
+
+        .password-wrap input {
+            margin-top: 0;
+            padding-right: 48px;
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: auto;
+            margin: 0;
+            padding: 6px 10px;
+            background: transparent;
+            color: #aab8c4;
+            font-size: 18px;
+        }
+
+        input::-ms-reveal { display: none; }
     </style>
 </head>
 <body>
 <main>
-    <h1>Join Pitchside</h1>
-    <p>Create your supporter account.</p>
+    <h1>Create Account</h1>
+    <p>Join Pitchside and talk football.</p>
 
     <form id="register-form">
         <input
@@ -55,35 +85,96 @@
             minlength="3"
             maxlength="30"
             pattern="[A-Za-z0-9_]+"
+            title="Letters, numbers and underscores only"
             autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
             required
         >
 
-        <input
-            name="password"
-            type="password"
-            placeholder="Password (at least 8 characters)"
-            minlength="8"
-            maxlength="128"
-            autocomplete="new-password"
-            required
-        >
+        <div class="password-wrap">
+            <input
+                name="password"
+                type="password"
+                placeholder="Password"
+                minlength="8"
+                maxlength="128"
+                autocomplete="new-password"
+                required
+            >
+            <button
+                type="button"
+                class="toggle-password"
+                id="toggle-password"
+                aria-label="Show password"
+                aria-pressed="false"
+            >👁</button>
+        </div>
 
-        <button type="submit">Create account</button>
+        <p class="hint">
+            Username: 3 to 30 letters, numbers or underscores.
+            Password: at least 8 characters. There is no password recovery yet,
+            so choose one you will remember.
+        </p>
+
+        <button id="register-button" type="submit">Create account</button>
     </form>
 
-    <p id="message" role="status"></p>
-    <p>Already registered? <a href="/auth/login">Log in</a></p>
+    <p id="message" role="status" aria-live="polite"></p>
+    <p>Already have an account? <a href="/auth/login">Log in</a></p>
     <p><a href="/">Back to Pitchside</a></p>
 </main>
 
 <script>
-document.getElementById("register-form").addEventListener("submit", async (event) => {
+const form = document.getElementById("register-form");
+const button = document.getElementById("register-button");
+const message = document.getElementById("message");
+
+const passwordInput = document.querySelector('input[name="password"]');
+const togglePassword = document.getElementById("toggle-password");
+
+togglePassword.addEventListener("click", () => {
+    const showing = passwordInput.type === "text";
+
+    passwordInput.type = showing ? "password" : "text";
+    togglePassword.textContent = showing ? "👁" : "🙈";
+    togglePassword.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    togglePassword.setAttribute("aria-pressed", String(!showing));
+});
+
+function showMessage(text, isError) {
+    message.textContent = text;
+    message.className = isError ? "error" : "";
+}
+
+/* Turn whatever the server sent into one readable sentence. */
+function errorText(status, result) {
+    if (status === 422) {
+        return "Username must be 3 to 30 letters, numbers or underscores, " +
+               "and the password at least 8 characters.";
+    }
+
+    if (result && typeof result.detail === "string") {
+        return result.detail;
+    }
+
+    return "Could not create the account. Please try again.";
+}
+
+form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const form = event.currentTarget;
-    const message = document.getElementById("message");
     const data = Object.fromEntries(new FormData(form));
+    data.username = data.username.trim();
+
+    button.disabled = true;
+    button.textContent = "Creating account...";
+    showMessage("Creating your account, please wait...", false);
+
+    /* If the server is slow, say so instead of looking frozen. */
+    const slowTimer = setTimeout(() => {
+        showMessage("The server is taking a while to respond. Please keep waiting...", false);
+    }, 4000);
 
     try {
         const response = await fetch("/auth/register", {
@@ -93,16 +184,23 @@ document.getElementById("register-form").addEventListener("submit", async (event
             body: JSON.stringify(data)
         });
 
-        const result = await response.json();
+        const result = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            message.textContent = result.detail || "Registration failed.";
+            showMessage(errorText(response.status, result), true);
             return;
         }
 
+        showMessage("Account created! Opening Pitchside...", false);
         window.location.href = "/";
+
     } catch {
-        message.textContent = "Unable to connect. Please try again.";
+        showMessage("Could not reach the server. Check your internet connection and try again.", true);
+
+    } finally {
+        clearTimeout(slowTimer);
+        button.disabled = false;
+        button.textContent = "Create account";
     }
 });
 </script>
