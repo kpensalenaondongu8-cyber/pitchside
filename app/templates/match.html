@@ -259,7 +259,7 @@
       if (event.code === 4404) { setStatus("This match room is not available."); return; }
       if (event.code === 4429) { setStatus("Too many tabs open for this match. Close one and reload."); return; }
 
-      setStatus("Disconnected. Reconnecting...");
+      setStatus(`Disconnected (code ${event.code}). Reconnecting...`);      
       const delay = Math.min(1000 * (2 ** reconnectAttempts), 15000);
       reconnectAttempts++;
       reconnectTimer = setTimeout(connectChat, delay);
