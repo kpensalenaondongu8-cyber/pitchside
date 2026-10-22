@@ -6,14 +6,12 @@
 .scoreboard { margin-top: 4px; padding: 16px; background: var(--card); border-radius: 12px; text-align: center; }
 .sb-status { font-size: .8rem; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
 .sb-status.live { color: var(--accent); }
-/* Three columns: home team, score, away team. Long names wrap inside their column. */
 .sb-teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin: 14px 0; }
 .sb-team { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .sb-score { font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sb-score.live { color: var(--accent); }
 .sb-score.vs { font-size: 1.1rem; font-weight: 400; color: var(--muted); }
 .sb-meta { color: var(--muted); font-size: .85rem; }
-/* Small phones: tighter spacing so long team names wrap between words, not inside them. */
 @media (max-width: 380px) {
   .scoreboard { padding: 14px 10px; }
   .sb-teams { gap: 8px; }
@@ -21,22 +19,57 @@
   .sb-score { font-size: 1.6rem; }
 }
 .soon { margin: 16px 0 0; padding: 14px 16px; border: 1px dashed #1d4a31; border-radius: 12px; color: var(--muted); text-align: center; font-size: .9rem; }
+
+.chat { margin-top: 16px; background: var(--card); border-radius: 12px; overflow: hidden; }
+.chat-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #1d4a31; font-weight: 700; }
+.chat-count { color: var(--muted); font-size: .85rem; font-weight: 400; }
+#chat-messages { display: flex; flex-direction: column; gap: 10px; height: 45vh; min-height: 240px; max-height: 480px; overflow-y: auto; padding: 14px; }
+.chat-empty { margin: auto; color: var(--muted); text-align: center; }
+.msg { display: flex; flex-direction: column; align-items: flex-start; align-self: flex-start; max-width: 85%; width: fit-content; }
+.msg.mine { align-self: flex-end; align-items: flex-end; }
+.msg-name { margin: 0 6px 3px; font-size: .75rem; font-weight: 700; color: var(--muted); }
+.msg.mine .msg-name { color: var(--accent); }
+.msg-text { padding: 9px 13px; background: #1a4a31; border-radius: 14px 14px 14px 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.mine .msg-text { background: #1f7a46; border-radius: 14px 14px 4px 14px; }
+.msg-time { margin: 3px 6px 0; font-size: .7rem; color: var(--muted); }
+#chat-form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #1d4a31; }
+#chat-input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #2a5a40; border-radius: 8px; background: var(--bg); color: var(--text); font-size: 16px; }
+#chat-send { padding: 12px 18px; border: 0; border-radius: 8px; background: var(--accent); color: #06210f; font-weight: 700; cursor: pointer; }
+#chat-send:disabled { opacity: .5; cursor: not-allowed; }
+#chat-status { padding: 0 14px 12px; color: var(--muted); font-size: .8rem; }
 {% endblock %}
 
 {% block content %}
-<div id="content"><p class="empty">Loading...</p></div>
+<div id="scoreboard-area"><p class="empty">Loading...</p></div>
+<p class="soon">Match events and lineups are coming soon.</p>
+
+<section class="chat" id="chat" hidden>
+  <div class="chat-head">
+    <span>Match chat</span>
+    <span class="chat-count" id="chat-count"></span>
+  </div>
+  <div id="chat-messages" aria-live="polite"><p class="chat-empty">Connecting...</p></div>
+  <form id="chat-form">
+    <input id="chat-input" type="text" maxlength="1000"
+           placeholder="Say something about the match..." autocomplete="off" required>
+    <button id="chat-send" type="submit" disabled>Send</button>
+  </form>
+  <div id="chat-status" role="status" aria-live="polite"></div>
+</section>
 {% endblock %}
 
 {% block script %}
 <script>
   const ENDPOINT = {{ endpoint | tojson }};
-  const container = document.getElementById("content");
+  const MATCH_ID = Number(ENDPOINT.split("/").pop());
+  const scoreboardArea = document.getElementById("scoreboard-area");
 
-  // The scoreboard has room for the full words.
   const LONG_STATUS = {
     IN_PLAY: "LIVE", PAUSED: "HALF TIME", FINISHED: "FULL TIME",
     TIMED: "NOT STARTED", SCHEDULED: "NOT STARTED", POSTPONED: "POSTPONED",
   };
+
+  /* ---------- Scoreboard (refreshes every REFRESH_MS) ---------- */
 
   function render(m) {
     const live = m.status === "IN_PLAY" || m.status === "PAUSED";
@@ -46,7 +79,7 @@
       weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
     });
     document.title = `${m.home_team} vs ${m.away_team} · Pitchside`;
-    container.innerHTML = `
+    scoreboardArea.innerHTML = `
       <a class="back" href="/league/${encodeURIComponent(m.competition_slug)}">&larr; ${esc(m.competition)}</a>
       <section class="scoreboard">
         <div class="sb-status${live ? " live" : ""}">${esc(LONG_STATUS[m.status] || m.status)}</div>
@@ -56,23 +89,173 @@
           <div class="sb-team">${esc(m.away_team)}</div>
         </div>
         <div class="sb-meta">Kickoff ${esc(kickoff)}</div>
-      </section>
-      <p class="soon">Match events, lineups and live chat are coming soon.</p>`;
+      </section>`;
   }
 
   async function load() {
     try {
       const response = await fetch(ENDPOINT);
       if (response.status === 404) {
-        container.innerHTML = '<p class="empty">Match not found.<br><a class="back" href="/">&larr; Back to leagues</a></p>';
+        scoreboardArea.innerHTML = '<p class="empty">Match not found.<br><a class="back" href="/">&larr; Back to leagues</a></p>';
         return;
       }
       if (!response.ok) throw new Error("Request failed");
       render(await response.json());
+      startChat();   // the match is saved in the database now, so its room can open
     } catch (error) {
-      container.innerHTML = '<p class="error">Could not load this match. Retrying...</p>';
+      scoreboardArea.innerHTML = '<p class="error">Could not load this match. Retrying...</p>';
     }
   }
+
+  /* ---------- Match chat ---------- */
+
+  const chatBox = document.getElementById("chat");
+  const messagesEl = document.getElementById("chat-messages");
+  const countEl = document.getElementById("chat-count");
+  const form = document.getElementById("chat-form");
+  const input = document.getElementById("chat-input");
+  const sendButton = document.getElementById("chat-send");
+  const statusEl = document.getElementById("chat-status");
+
+  let currentUsername = null;
+  let socket = null;
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
+  let chatStarted = false;
+  let manuallyClosed = false;
+  const shown = new Set();
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function nearBottom() {
+    return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 100;
+  }
+
+  function addMessage(message) {
+    if (shown.has(message.id)) return;
+    shown.add(message.id);
+
+    const empty = messagesEl.querySelector(".chat-empty");
+    if (empty) empty.remove();
+
+    const mine = message.username === currentUsername;
+    const stick = mine || nearBottom();
+
+    const wrapper = document.createElement("div");
+    wrapper.className = mine ? "msg mine" : "msg";
+
+    const name = document.createElement("div");
+    name.className = "msg-name";
+    name.textContent = mine ? "You" : message.username;
+
+    const text = document.createElement("div");
+    text.className = "msg-text";
+    text.textContent = message.message;          // textContent: HTML in a message stays plain text
+
+    const time = document.createElement("div");
+    time.className = "msg-time";
+    time.textContent = new Date(message.created_at).toLocaleTimeString([], {
+      hour: "2-digit", minute: "2-digit",
+    });
+
+    wrapper.append(name, text, time);
+    messagesEl.appendChild(wrapper);
+
+    if (stick) messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function showHistory(messages) {
+    messagesEl.replaceChildren();
+    shown.clear();
+
+    if (messages.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "chat-empty";
+      empty.textContent = "No messages yet. Start the conversation!";
+      messagesEl.appendChild(empty);
+      return;
+    }
+
+    for (const message of messages) addMessage(message);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function connectChat() {
+    manuallyClosed = false;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    socket = new WebSocket(`${protocol}//${window.location.host}/ws/match/${MATCH_ID}`);
+
+    sendButton.disabled = true;
+    setStatus("Connecting to chat...");
+
+    socket.addEventListener("open", () => {
+      reconnectAttempts = 0;
+      sendButton.disabled = false;
+      setStatus("");
+    });
+
+    socket.addEventListener("message", (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch { return; }
+
+      if (data.type === "history") showHistory(data.messages);
+      else if (data.type === "message") addMessage(data.message);
+      else if (data.type === "presence") countEl.textContent = `${data.count} watching`;
+      else if (data.type === "error") setStatus(data.detail || "Unable to send that message.");
+    });
+
+    socket.addEventListener("close", (event) => {
+      sendButton.disabled = true;
+      if (manuallyClosed) return;
+
+      if (event.code === 4401) { window.location.href = "/auth/login?next=" + encodeURIComponent(window.location.pathname); return; }
+      if (event.code === 4403) { setStatus("Chat is not available from this web address."); return; }
+      if (event.code === 4404) { setStatus("This match room is not available."); return; }
+      if (event.code === 4429) { setStatus("Too many tabs open for this match. Close one and reload."); return; }
+
+      setStatus("Disconnected. Reconnecting...");
+      const delay = Math.min(1000 * (2 ** reconnectAttempts), 15000);
+      reconnectAttempts++;
+      reconnectTimer = setTimeout(connectChat, delay);
+    });
+  }
+
+  async function startChat() {
+    if (chatStarted) return;
+    chatStarted = true;
+    chatBox.hidden = false;
+
+    try {
+      const response = await fetch("/auth/me");
+      if (response.ok) currentUsername = (await response.json()).user.username;
+    } catch (_) { /* the chat still works; own messages just won't be highlighted */ }
+
+    connectChat();
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    const text = input.value.trim();
+    if (!text) return;
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setStatus("Not connected. Please wait for reconnection.");
+      return;
+    }
+
+    socket.send(JSON.stringify({ message: text }));
+    input.value = "";
+    input.focus();
+  });
+
+  window.addEventListener("beforeunload", () => {
+    manuallyClosed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (socket) socket.close();
+  });
 
   load();
   setInterval(load, REFRESH_MS);
