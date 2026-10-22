@@ -1,4 +1,6 @@
 import json
+import logging
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -9,6 +11,8 @@ from app.models import Match, MatchMessage, User
 from app.ratelimit import RateLimiter
 from app.security import COOKIE_NAME, read_auth_token
 from app.timeutils import to_utc_iso
+
+log = logging.getLogger("uvicorn.error")
 
 router = APIRouter(tags=["Match chat"])
 
@@ -88,27 +92,45 @@ def message_to_dict(message: MatchMessage, username: str) -> dict:
 
 @router.websocket("/ws/match/{match_id}")
 async def match_chat(websocket: WebSocket, match_id: int):
+    started = time.monotonic()
+
+    def step(name: str):
+        log.warning("match chat %s: %s (%.2fs)", match_id, name, time.monotonic() - started)
+
+    step("start")
+
     # Accept first so the browser can read our close codes (4401, 4403, ...).
     # Nothing is sent or read until every check below has passed.
     await websocket.accept()
+    step("accepted")
 
-    if websocket.headers.get("origin") not in ALLOWED_ORIGINS:
+    origin = websocket.headers.get("origin")
+
+    if origin not in ALLOWED_ORIGINS:
+        log.warning("match chat refused: origin %r, allowed %r", origin, sorted(ALLOWED_ORIGINS))
         await websocket.close(code=4403, reason="Origin not allowed")
         return
+
+    step("origin ok")
 
     token = websocket.cookies.get(COOKIE_NAME)
     token_data = read_auth_token(token) if token else None
 
     if token_data is None:
+        log.warning("match chat refused: not logged in")
         await websocket.close(code=4401, reason="Authentication required")
         return
+
+    step("token ok")
 
     db = SessionLocal()
 
     try:
         user = db.get(User, token_data["uid"])
+        step("user query done")
 
         if user is None or user.auth_version != token_data["v"]:
+            log.warning("match chat refused: user or session not valid")
             await websocket.close(code=4401, reason="Authentication required")
             return
 
@@ -118,12 +140,15 @@ async def match_chat(websocket: WebSocket, match_id: int):
         match_exists = (
             db.query(Match.id).filter(Match.api_id == match_id).first() is not None
         )
+        step("match query done")
 
         if not match_exists:
+            log.warning("match chat refused: match %s not in database", match_id)
             await websocket.close(code=4404, reason="Match not found")
             return
 
         if rooms.tabs_for_user(match_id, user_id) >= MAX_TABS_PER_USER:
+            log.warning("match chat refused: too many tabs for user %s", user_id)
             await websocket.close(code=4429, reason="Too many open tabs")
             return
 
@@ -137,6 +162,12 @@ async def match_chat(websocket: WebSocket, match_id: int):
         )
         rows.reverse()
         history = [message_to_dict(m, name) for m, name in rows]
+        step(f"history loaded, {len(history)} messages")
+
+    except Exception:
+        log.exception("match chat %s: failed while setting up the room", match_id)
+        await websocket.close(code=1011, reason="Server error")
+        return
 
     finally:
         db.close()
@@ -145,7 +176,10 @@ async def match_chat(websocket: WebSocket, match_id: int):
 
     try:
         await websocket.send_json({"type": "history", "messages": history})
+        step("history sent")
+
         await rooms.broadcast_viewers(match_id)
+        step("viewers sent")
 
         while True:
             raw_data = await websocket.receive_text()
