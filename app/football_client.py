@@ -23,7 +23,7 @@ class ProviderError(Exception):
 _locks = {}
 _blocked_until = 0.0            # don't call the provider before this time
 quota = {"remaining": None, "day": None}
-last_error = {"text": ""}
+last_error = {"text": ""}       # the most recent provider error, shown while paused
 
 _cache = {}
 
@@ -61,6 +61,7 @@ SAMPLE_MATCHES = [
         "kickoff": "2026-10-14T19:00:00Z",
     },
 ]
+
 # API-Football status codes -> the statuses Pitchside uses everywhere else.
 API_FOOTBALL_STATUS = {
     "TBD": "TIMED",
@@ -125,7 +126,9 @@ def _normalize_api_football(raw: dict) -> dict:
 def _provider_key() -> str:
     if config.FOOTBALL_PROVIDER == "football-data":
         return config.FOOTBALL_API_KEY
-    return config.API_FOOTBALL_KEY   
+    return config.API_FOOTBALL_KEY
+
+
 async def _call_provider(kind: str, day: str) -> list[dict]:
     """Make one real request to the provider. kind is "live" or "today"."""
     key = _provider_key()
@@ -156,6 +159,7 @@ async def _call_provider(kind: str, day: str) -> list[dict]:
         raise ProviderError(f"API-Football: {data['errors']}")
     return [_normalize_api_football(m) for m in data.get("response", [])]
 
+
 async def _fetch_matches(kind: str) -> list[dict]:
     """Return matches, reusing a recent answer so we respect the rate limit."""
     global _blocked_until
@@ -185,6 +189,7 @@ async def _fetch_matches(kind: str) -> list[dict]:
                 "Provider paused for a minute after this error: "
                 + (last_error["text"] or f"quota almost used up (remaining: {quota['remaining']})")
             )
+
         try:
             matches = await _call_provider(kind, day)
         except (httpx.HTTPError, ProviderError) as error:
@@ -196,6 +201,7 @@ async def _fetch_matches(kind: str) -> list[dict]:
 
         _cache[cache_key] = {"time": time.time(), "data": matches}
         return matches
+
 
 async def fetch_live_matches() -> list[dict]:
     """Return matches that are being played right now."""
