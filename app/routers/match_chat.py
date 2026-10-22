@@ -44,9 +44,14 @@ class RoomManager:
         room = self.rooms.get(match_id, {})
         return sum(1 for c in room.values() if c["user_id"] == user_id)
 
-    def viewer_count(self, match_id):
+    def viewers(self, match_id):
+        """Everyone in this match room, once each, sorted by name."""
         room = self.rooms.get(match_id, {})
-        return len({c["user_id"] for c in room.values()})
+        people = {c["user_id"]: c["username"] for c in room.values()}
+        return sorted(
+            ({"id": uid, "username": name} for uid, name in people.items()),
+            key=lambda person: person["username"].casefold(),
+        )
 
     async def broadcast(self, match_id, data: dict):
         dead = []
@@ -61,9 +66,11 @@ class RoomManager:
             self.leave(match_id, connection)
 
     async def broadcast_viewers(self, match_id):
+        users = self.viewers(match_id)
         await self.broadcast(match_id, {
             "type": "presence",
-            "count": self.viewer_count(match_id),
+            "count": len(users),
+            "users": users,
         })
 
 
