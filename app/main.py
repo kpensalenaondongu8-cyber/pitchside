@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from app import models  # Register all SQLAlchemy models before create_all.
 from app.database import Base, SessionLocal, engine
 from app.models import User
-from app.routers import auth, chat, matches, private_chat, match_chat
+from app.routers import auth, chat, matches, private_chat, match_chat, highlights, skits
 from app.security import COOKIE_NAME, read_auth_token
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -21,7 +21,7 @@ app = FastAPI(title="Pitchside", docs_url=None, redoc_url=None, openapi_url=None
 PUBLIC_PATHS = {"/health"}
 
 # Calls to these paths come from JavaScript, so they get a JSON 401 instead of a redirect.
-JSON_API_PREFIXES = ("/matches/", "/chat/", "/private/conversations")
+JSON_API_PREFIXES = ("/matches/", "/chat/", "/private/conversations", "/highlights/", "/skits/")
 
 
 def not_logged_in(path: str):
@@ -33,6 +33,13 @@ def not_logged_in(path: str):
         )
     return RedirectResponse(url=f"/auth/login?next={quote(path)}", status_code=303)
 
+@app.get("/highlights")
+def highlights_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "highlights.html",
+        {"page": "highlights", "subtitle": "Official highlights from recent matches."},
+    )
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
@@ -65,6 +72,8 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(private_chat.router)
 app.include_router(match_chat.router)
+app.include_router(highlights.router)
+app.include_router(skits.router)
 
 
 def render_page(request: Request, page: str, subtitle: str, endpoint: str, empty_text: str, slug: str = ""):
@@ -81,7 +90,13 @@ def render_page(request: Request, page: str, subtitle: str, endpoint: str, empty
         },
     )
 
-
+@app.get("/skits")
+def skits_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "skits.html",
+        {"page": "skits", "subtitle": "Skits from the Pitchside community."},
+    )
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "Pitchside"}

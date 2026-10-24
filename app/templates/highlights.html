@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Highlights · Pitchside{% endblock %}
+
+{% block style %}
+.hl-card { margin-top: 12px; background: var(--card); border-radius: 12px; overflow: hidden; }
+.hl-media { position: relative; width: 100%; padding-top: 56.25%; background: #000; }
+.hl-media > * { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.hl-play { display: block; padding: 0; cursor: pointer; background: #000; border: 0; }
+.hl-play img { width: 100%; height: 100%; object-fit: cover; opacity: .85; }
+.hl-play span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 50%; background: rgba(0, 0, 0, .65); color: #fff; font-size: 28px; line-height: 64px; text-align: center; }
+.hl-body { padding: 12px 14px 14px; }
+.hl-comp { margin: 0 0 4px; color: var(--muted); font-size: .8rem; font-weight: 700; letter-spacing: .03em; }
+.hl-match { margin: 0 0 4px; font-weight: 700; overflow-wrap: anywhere; }
+.hl-title { margin: 0 0 8px; color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+.hl-links { display: flex; flex-wrap: wrap; gap: 16px; }
+.hl-links a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-size: .9rem; text-decoration: none; }
+.note { margin: 12px 0 0; color: var(--muted); font-size: .8rem; text-align: center; }
+{% endblock %}
+
+{% block content %}
+<div id="feed"><p class="empty">Loading...</p></div>
+<p class="note">Official videos from YouTube. If a video cannot play here, use "Watch on YouTube".</p>
+{% endblock %}
+
+{% block script %}
+<script>
+  const feed = document.getElementById("feed");
+
+  function matchLine(item) {
+    if (!item.home_team && !item.away_team) return "";
+    const hasScore = item.home_score != null && item.away_score != null;
+    const score = hasScore ? `${item.home_score} - ${item.away_score}` : "vs";
+    return `${item.home_team} ${score} ${item.away_team}`;
+  }
+
+  function playVideo(media, item) {
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(item.video_id)}?autoplay=1`;
+    iframe.title = item.title;
+    iframe.allowFullscreen = true;
+    iframe.referrerPolicy = "strict-origin-when-cross-origin";
+    iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+    media.replaceChildren(iframe);
+  }
+
+  function card(item) {
+    const article = document.createElement("article");
+    article.className = "hl-card";
+
+    const media = document.createElement("div");
+    media.className = "hl-media";
+
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "hl-play";
+    play.setAttribute("aria-label", `Play: ${item.title}`);
+
+    const image = document.createElement("img");
+    image.src = `https://i.ytimg.com/vi/${encodeURIComponent(item.video_id)}/hqdefault.jpg`;
+    image.alt = "";
+    image.loading = "lazy";
+
+    const arrow = document.createElement("span");
+    arrow.textContent = "\u25B6";
+
+    play.append(image, arrow);
+    play.addEventListener("click", () => playVideo(media, item));
+    media.appendChild(play);
+
+    const body = document.createElement("div");
+    body.className = "hl-body";
+
+    if (item.competition) {
+      const comp = document.createElement("p");
+      comp.className = "hl-comp";
+      comp.textContent = item.competition;
+      body.appendChild(comp);
+    }
+
+    const line = matchLine(item);
+    if (line) {
+      const match = document.createElement("p");
+      match.className = "hl-match";
+      match.textContent = line;
+      body.appendChild(match);
+    }
+
+    const title = document.createElement("p");
+    title.className = "hl-title";
+    title.textContent = item.title;
+    body.appendChild(title);
+
+    const links = document.createElement("div");
+    links.className = "hl-links";
+
+    const youtube = document.createElement("a");
+    youtube.href = `https://www.youtube.com/watch?v=${encodeURIComponent(item.video_id)}`;
+    youtube.target = "_blank";
+    youtube.rel = "noopener noreferrer";
+    youtube.textContent = "Watch on YouTube";
+    links.appendChild(youtube);
+
+    const room = document.createElement("a");
+    room.href = `/match/${encodeURIComponent(item.match_id)}`;
+    room.textContent = "Match room";
+    links.appendChild(room);
+
+    body.appendChild(links);
+    article.append(media, body);
+    return article;
+  }
+
+  async function load() {
+    try {
+      const response = await fetch("/highlights/feed");
+
+      if (response.status === 401) {
+        window.location.href = "/auth/login?next=/highlights";
+        return;
+      }
+
+      if (!response.ok) throw new Error("Request failed");
+
+      const data = await response.json();
+      const items = data.highlights || [];
+
+      feed.replaceChildren();
+
+      if (items.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "No highlights yet. They are added after matches finish.";
+        feed.appendChild(empty);
+        return;
+      }
+
+      for (const item of items) feed.appendChild(card(item));
+    } catch (error) {
+      feed.innerHTML = '<p class="error">Could not load highlights. Please try again.</p>';
+    }
+  }
+
+  load();
+</script>
+{% endblock %}

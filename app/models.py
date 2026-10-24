@@ -90,3 +90,59 @@ class MatchMessage(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+class HighlightVideo(Base):
+    """An official YouTube video (highlights) linked to a match. Only the video id is stored."""
+
+    __tablename__ = "highlight_videos"
+    __table_args__ = (
+        UniqueConstraint("match_id", "video_id", name="uq_highlight_match_video"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    match_id = Column(Integer, nullable=False, index=True)
+    video_id = Column(String(11), nullable=False)
+    title = Column(String(150), nullable=False, default="Highlights")
+    added_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+class Skit(Base):
+    """A skit shared on Pitchside. status: pending, approved, rejected, removed or reported."""
+
+    __tablename__ = "skits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String(20), nullable=False, default="youtube")
+    video_id = Column(String(64), nullable=False, index=True)
+    title = Column(String(100), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class SkitReport(Base):
+    """One user's report of one skit. A user can report a skit only once."""
+
+    __tablename__ = "skit_reports"
+    __table_args__ = (
+        UniqueConstraint("skit_id", "user_id", name="uq_skit_report_user"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    skit_id = Column(Integer, ForeignKey("skits.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )

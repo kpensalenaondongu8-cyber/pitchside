@@ -43,3 +43,9 @@ ALLOWED_ORIGINS = {
     for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
     if o.strip()
 }
+# Usernames allowed to add and remove highlight videos, separated by commas.
+ADMIN_USERNAMES = {
+    name.strip().lower()
+    for name in os.getenv("ADMIN_USERNAMES", "").split(",")
+    if name.strip()
+}

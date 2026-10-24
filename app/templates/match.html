@@ -20,6 +20,30 @@
 }
 .soon { margin: 16px 0 0; padding: 14px 16px; border: 1px dashed #1d4a31; border-radius: 12px; color: var(--muted); text-align: center; font-size: .9rem; }
 
+.watch { margin-top: 12px; padding: 14px 16px; background: var(--card); border-radius: 12px; }
+.watch h2 { margin: 0 0 6px; font-size: 1rem; }
+.watch p { margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
+.watch-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.watch-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 8px; background: var(--accent); color: #06210f; font-weight: 700; text-decoration: none; }
+.watch small { display: block; margin-top: 10px; color: var(--muted); font-size: .75rem; }
+
+.highlights { margin-top: 16px; padding: 14px 16px; background: var(--card); border-radius: 12px; }
+.highlights[hidden] { display: none; }
+.highlights h2 { margin: 0 0 10px; font-size: 1rem; }
+.hl { margin-bottom: 16px; }
+.hl-title { margin-bottom: 8px; font-weight: 600; overflow-wrap: anywhere; }
+.hl-frame { position: relative; width: 100%; padding-top: 56.25%; border-radius: 10px; overflow: hidden; background: #000; }
+.hl-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.hl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 6px; }
+.hl-actions a { color: var(--accent); font-size: .85rem; text-decoration: none; }
+.hl-remove { background: none; border: 0; padding: 8px 0; color: var(--muted); font: inherit; font-size: .85rem; cursor: pointer; }
+#highlight-form { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid #1d4a31; }
+#highlight-form[hidden] { display: none; }
+#highlight-form input { padding: 10px 12px; border: 1px solid #2a5a40; border-radius: 8px; background: var(--bg); color: var(--text); font-size: 16px; }
+#highlight-form button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--accent); color: #06210f; font-weight: 700; cursor: pointer; }
+#highlight-form button:disabled { opacity: .5; cursor: wait; }
+#highlight-status { color: var(--muted); font-size: .8rem; min-height: 18px; }
+
 .chat { margin-top: 16px; background: var(--card); border-radius: 12px; overflow: hidden; }
 .chat-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #1d4a31; font-weight: 700; }
 .chat-count { background: none; border: 0; color: var(--accent); font: inherit; font-size: .85rem; cursor: pointer; padding: 8px 0; text-decoration: underline; }
@@ -30,8 +54,8 @@
 .viewer-link { display: block; width: 100%; padding: 8px 4px; color: var(--accent); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 .viewer-link:hover { text-decoration: underline; }
 .viewer-me { display: block; padding: 8px 4px; color: var(--muted); overflow-wrap: anywhere; }
-#chat-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #2a5a40; border-radius: 8px; background: var(--bg); color: var(--text); font-size: 16px; }
-#chat-send { padding: 10px 16px; border: 0; border-radius: 10px; background: var(--accent); color: #06210f; font-weight: 700; cursor: pointer; }.chat-empty { margin: auto; color: var(--muted); text-align: center; }
+#chat-messages { display: flex; flex-direction: column; gap: 10px; height: clamp(180px, 32vh, 300px); overflow-y: auto; padding: 12px; }
+.chat-empty { margin: auto; color: var(--muted); text-align: center; }
 .msg { display: flex; flex-direction: column; align-items: flex-start; align-self: flex-start; max-width: 85%; width: fit-content; }
 .msg.mine { align-self: flex-end; align-items: flex-end; }
 .msg-name { margin: 0 6px 3px; font-size: .75rem; font-weight: 700; color: var(--muted); }
@@ -40,8 +64,8 @@
 .msg.mine .msg-text { background: #1f7a46; border-radius: 14px 14px 4px 14px; }
 .msg-time { margin: 3px 6px 0; font-size: .7rem; color: var(--muted); }
 #chat-form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #1d4a31; }
-#chat-input { flex: 1; min-width: 0; padding: 12px; border: 1px solid #2a5a40; border-radius: 8px; background: var(--bg); color: var(--text); font-size: 16px; }
-#chat-send { padding: 12px 18px; border: 0; border-radius: 8px; background: var(--accent); color: #06210f; font-weight: 700; cursor: pointer; }
+#chat-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #2a5a40; border-radius: 8px; background: var(--bg); color: var(--text); font-size: 16px; }
+#chat-send { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--accent); color: #06210f; font-weight: 700; cursor: pointer; }
 #chat-send:disabled { opacity: .5; cursor: not-allowed; }
 #chat-status { padding: 0 14px 12px; color: var(--muted); font-size: .8rem; }
 {% endblock %}
@@ -49,6 +73,17 @@
 {% block content %}
 <div id="scoreboard-area"><p class="empty">Loading...</p></div>
 <p class="soon">Match events and lineups are coming soon.</p>
+
+<section class="highlights" id="highlights" hidden>
+  <h2>Highlights</h2>
+  <div id="highlights-list"></div>
+  <form id="highlight-form" hidden>
+    <input id="highlight-url" type="text" placeholder="Paste a YouTube link" autocomplete="off" required>
+    <input id="highlight-title" type="text" maxlength="150" placeholder="Title (optional)" autocomplete="off">
+    <button id="highlight-add" type="submit">Add video</button>
+    <div id="highlight-status" role="status" aria-live="polite"></div>
+  </form>
+</section>
 
 <section class="chat" id="chat" hidden>
   <div class="chat-head">
@@ -78,6 +113,44 @@
     TIMED: "NOT STARTED", SCHEDULED: "NOT STARTED", POSTPONED: "POSTPONED",
   };
 
+  /* ---------- Where to watch (official services in Nigeria; check before publishing) ---------- */
+
+  const WATCH = [
+    {
+      match: ["premier league"],
+      text: "Premier League in Nigeria is shown on SuperSport (DStv and GOtv, or online with DStv Stream).",
+      links: [["SuperSport", "https://www.supersport.com"], ["DStv", "https://www.dstv.com"]],
+    },
+    {
+      match: ["primera division", "la liga", "laliga"],
+      text: "La Liga in Nigeria is shown on SuperSport channels.",
+      links: [["SuperSport", "https://www.supersport.com"], ["DStv", "https://www.dstv.com"]],
+    },
+    {
+      match: ["champions league"],
+      text: "Champions League in Nigeria is shown on SuperSport, and DAZN may also carry it.",
+      links: [["SuperSport", "https://www.supersport.com"], ["DAZN", "https://www.dazn.com"]],
+    },
+  ];
+
+  function watchHtml(competition) {
+    const name = (competition || "").toLowerCase();
+    const entry = WATCH.find(item => item.match.some(word => name.includes(word)));
+    if (!entry) return "";
+
+    const links = entry.links
+      .map(([label, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`)
+      .join("");
+
+    return `
+      <section class="watch">
+        <h2>Where to watch</h2>
+        <p>${esc(entry.text)}</p>
+        <div class="watch-links">${links}</div>
+        <small>Pitchside does not stream matches. Watch on the official service and chat with other fans below.</small>
+      </section>`;
+  }
+
   /* ---------- Scoreboard (refreshes every REFRESH_MS) ---------- */
 
   function render(m) {
@@ -98,7 +171,8 @@
           <div class="sb-team">${esc(m.away_team)}</div>
         </div>
         <div class="sb-meta">Kickoff ${esc(kickoff)}</div>
-      </section>`;
+      </section>
+      ${watchHtml(m.competition)}`;
   }
 
   async function load() {
@@ -111,8 +185,135 @@
       if (!response.ok) throw new Error("Request failed");
       render(await response.json());
       startChat();   // the match is saved in the database now, so its room can open
+      startHighlights();
     } catch (error) {
       scoreboardArea.innerHTML = '<p class="error">Could not load this match. Retrying...</p>';
+    }
+  }
+
+  /* ---------- Highlights (official YouTube videos, loaded once, not on every refresh) ---------- */
+
+  const highlightsBox = document.getElementById("highlights");
+  const highlightsList = document.getElementById("highlights-list");
+  const highlightForm = document.getElementById("highlight-form");
+  const highlightUrl = document.getElementById("highlight-url");
+  const highlightTitle = document.getElementById("highlight-title");
+  const highlightAdd = document.getElementById("highlight-add");
+  const highlightStatus = document.getElementById("highlight-status");
+
+  let canManage = false;
+  let highlightsStarted = false;
+
+  function renderHighlights(items) {
+    highlightsList.replaceChildren();
+    highlightForm.hidden = !canManage;
+    highlightsBox.hidden = items.length === 0 && !canManage;
+
+    for (const item of items) {
+      const card = document.createElement("div");
+      card.className = "hl";
+
+      const title = document.createElement("div");
+      title.className = "hl-title";
+      title.textContent = item.title;
+
+      const frame = document.createElement("div");
+      frame.className = "hl-frame";
+
+      const iframe = document.createElement("iframe");
+      iframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(item.video_id)}`;
+      iframe.title = item.title;
+      iframe.loading = "lazy";
+      iframe.allowFullscreen = true;
+      iframe.referrerPolicy = "strict-origin-when-cross-origin";
+      iframe.allow = "encrypted-media; picture-in-picture";
+      frame.appendChild(iframe);
+
+      const actions = document.createElement("div");
+      actions.className = "hl-actions";
+
+      const link = document.createElement("a");
+      link.href = `https://www.youtube.com/watch?v=${encodeURIComponent(item.video_id)}`;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Watch on YouTube";
+      actions.appendChild(link);
+
+      if (canManage) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "hl-remove";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", () => removeHighlight(item.id));
+        actions.appendChild(remove);
+      }
+
+      card.append(title, frame, actions);
+      highlightsList.appendChild(card);
+    }
+  }
+
+  async function loadHighlights() {
+    try {
+      const response = await fetch(`/highlights/${MATCH_ID}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      canManage = Boolean(data.can_manage);
+      renderHighlights(data.highlights || []);
+    } catch (_) { /* highlights are optional; the page works without them */ }
+  }
+
+  function startHighlights() {
+    if (highlightsStarted) return;
+    highlightsStarted = true;
+    loadHighlights();
+  }
+
+  function errorText(result) {
+    return result && typeof result.detail === "string" ? result.detail : "Could not do that. Please check the link.";
+  }
+
+  highlightForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    highlightAdd.disabled = true;
+    highlightStatus.textContent = "Adding...";
+
+    try {
+      const response = await fetch(`/highlights/${MATCH_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: highlightUrl.value.trim(), title: highlightTitle.value.trim() }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        highlightStatus.textContent = errorText(result);
+        return;
+      }
+
+      highlightUrl.value = "";
+      highlightTitle.value = "";
+      highlightStatus.textContent = "Added.";
+      await loadHighlights();
+    } catch (_) {
+      highlightStatus.textContent = "Could not reach the server.";
+    } finally {
+      highlightAdd.disabled = false;
+    }
+  });
+
+  async function removeHighlight(id) {
+    try {
+      const response = await fetch(`/highlights/${MATCH_ID}/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        highlightStatus.textContent = errorText(result);
+        return;
+      }
+      await loadHighlights();
+    } catch (_) {
+      highlightStatus.textContent = "Could not reach the server.";
     }
   }
 
@@ -259,7 +460,7 @@
       if (event.code === 4404) { setStatus("This match room is not available."); return; }
       if (event.code === 4429) { setStatus("Too many tabs open for this match. Close one and reload."); return; }
 
-      setStatus(`Disconnected (code ${event.code}). Reconnecting...`);      
+      setStatus(`Disconnected (code ${event.code}). Reconnecting...`);
       const delay = Math.min(1000 * (2 ** reconnectAttempts), 15000);
       reconnectAttempts++;
       reconnectTimer = setTimeout(connectChat, delay);

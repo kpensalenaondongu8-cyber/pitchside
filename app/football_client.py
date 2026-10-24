@@ -185,15 +185,20 @@ async def _fetch_matches(kind: str) -> list[dict]:
         if time.time() < _blocked_until or low_quota:
             if cached:
                 return cached["data"]
+
+            if low_quota:
+                reason = f"quota almost used up (remaining: {quota['remaining']})"
+            else:
+                reason = last_error["text"] or "no earlier error recorded"
+
             raise ProviderError(
-                "Provider paused for a minute after this error: "
-                + (last_error["text"] or f"quota almost used up (remaining: {quota['remaining']})")
+                "Provider paused for a minute after this error: " + reason
             )
 
         try:
             matches = await _call_provider(kind, day)
         except (httpx.HTTPError, ProviderError) as error:
-            last_error["text"] = str(error)
+            last_error["text"] = f"{type(error).__name__}: {error}".strip()
             _blocked_until = time.time() + 60   # back off for a minute
             if cached:
                 return cached["data"]

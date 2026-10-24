@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block title %}Skits · Pitchside{% endblock %}
+
+{% block style %}
+.sk-top { display: flex; justify-content: flex-end; margin-top: 4px; }
+.sk-btn { padding: 0 16px; min-height: 44px; border: 0; border-radius: 8px; background: var(--accent); color: #06210f; font-weight: 700; cursor: pointer; }
+.sk-btn:disabled { opacity: .5; cursor: wait; }
+.sk-btn.sk-quiet { background: transparent; color: var(--muted); font-weight: 600; }
+.sk-btn.sk-danger { background: #5a2323; color: #ffd6d6; }
+.sk-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 14px 16px; background: var(--card); border-radius: 12px; }
+.sk-form[hidden] { display: none; }
+.sk-form input[type="text"] { padding: 12px; border: 1px solid #2a5a40; border-radius: 8px; background: var(--bg); color: var(--text); font-size: 16px; }
+.sk-check { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); font-size: .9rem; }
+.sk-check input { margin-top: 3px; }
+#skit-status { min-height: 18px; color: var(--muted); font-size: .85rem; }
+.sk-h { margin: 20px 0 0; font-size: 1.05rem; }
+.sk-box[hidden] { display: none; }
+.sk-card { margin-top: 12px; background: var(--card); border-radius: 12px; overflow: hidden; }
+.sk-media { position: relative; width: 100%; padding-top: 56.25%; background: #000; }
+.sk-media > * { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.sk-play { display: block; padding: 0; cursor: pointer; background: #000; border: 0; }
+.sk-play img { width: 100%; height: 100%; object-fit: cover; opacity: .85; }
+.sk-play span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 50%; background: rgba(0, 0, 0, .65); color: #fff; font-size: 28px; line-height: 64px; text-align: center; }
+.sk-body { padding: 12px 14px 14px; }
+.sk-title { margin: 0 0 4px; font-weight: 700; overflow-wrap: anywhere; }
+.sk-by { margin: 0 0 8px; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.sk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.sk-actions a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-size: .9rem; text-decoration: none; }
+.sk-row { margin-top: 8px; padding: 10px 12px; background: var(--card); border-radius: 10px; }
+.sk-row p { margin: 0; overflow-wrap: anywhere; }
+.sk-row small { color: var(--muted); }
+.note { margin: 12px 0 0; color: var(--muted); font-size: .8rem; text-align: center; }
+{% endblock %}
+
+{% block content %}
+<div class="sk-top">
+  <button type="button" class="sk-btn" id="open-form">Submit a skit</button>
+</div>
+
+<form id="skit-form" class="sk-form" hidden>
+  <input id="skit-title" type="text" maxlength="100" placeholder="Title" autocomplete="off" required>
+  <input id="skit-url" type="text" maxlength="300" placeholder="Paste your YouTube link" autocomplete="off" required>
+  <label class="sk-check">
+    <input id="skit-confirm" type="checkbox">
+    <span>I made this skit, or its creator has agreed to share it here.</span>
+  </label>
+  <button id="skit-submit" type="submit" class="sk-btn">Send for approval</button>
+  <div id="skit-status" role="status" aria-live="polite"></div>
+</form>
+
+<section class="sk-box" id="mine-box" hidden>
+  <h2 class="sk-h">Your submissions</h2>
+  <div id="mine-list"></div>
+</section>
+
+<section class="sk-box" id="queue-box" hidden>
+  <h2 class="sk-h">Review queue</h2>
+  <div id="queue-list"></div>
+</section>
+
+<h2 class="sk-h">Latest skits</h2>
+<div id="feed"><p class="empty">Loading...</p></div>
+<p class="note">Skits are YouTube videos shared by fans and approved by Pitchside. If one cannot play here, use "Watch on YouTube".</p>
+{% endblock %}
+
+{% block script %}
+<script>
+  const feedEl = document.getElementById("feed");
+  const mineBox = document.getElementById("mine-box");
+  const mineList = document.getElementById("mine-list");
+  const queueBox = document.getElementById("queue-box");
+  const queueList = document.getElementById("queue-list");
+  const formEl = document.getElementById("skit-form");
+  const statusEl = document.getElementById("skit-status");
+  const submitBtn = document.getElementById("skit-submit");
+
+  let canManage = false;
+
+  async function api(url, method = "GET", body = null) {
+    const options = { method, headers: {} };
+
+    if (body) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, options);
+
+    if (response.status === 401) {
+      window.location.href = "/auth/login?next=/skits";
+      return { ok: false, status: 401, data: {} };
+    }
+
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, data };
+  }
+
+  function errorText(result) {
+    if (result.data && typeof result.data.detail === "string") return result.data.detail;
+    if (result.status === 422) return "Please check the link and the title (3 to 100 characters).";
+    return "Something went wrong. Please try again.";
+  }
+
+  function makeButton(label, className, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sk-btn " + className;
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function playVideo(media, item) {
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(item.video_id)}?autoplay=1`;
+    iframe.title = item.title;
+    iframe.allowFullscreen = true;
+    iframe.referrerPolicy = "strict-origin-when-cross-origin";
+    iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+    media.replaceChildren(iframe);
+  }
+
+  function skitCard(item, mode) {
+    const article = document.createElement("article");
+    article.className = "sk-card";
+
+    const media = document.createElement("div");
+    media.className = "sk-media";
+
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "sk-play";
+    play.setAttribute("aria-label", `Play: ${item.title}`);
+
+    const image = document.createElement("img");
+    image.src = `https://i.ytimg.com/vi/${encodeURIComponent(item.video_id)}/hqdefault.jpg`;
+    image.alt = "";
+    image.loading = "lazy";
+
+    const arrow = document.createElement("span");
+    arrow.textContent = "\u25B6";
+
+    play.append(image, arrow);
+    play.addEventListener("click", () => playVideo(media, item));
+    media.appendChild(play);
+
+    const body = document.createElement("div");
+    body.className = "sk-body";
+
+    const title = document.createElement("p");
+    title.className = "sk-title";
+    title.textContent = item.title;
+
+    const by = document.createElement("p");
+    by.className = "sk-by";
+    let byText = `by ${item.username}`;
+    if (mode === "queue") byText += item.status === "reported" ? ` · hidden after ${item.reports} reports` : " · waiting for approval";
+    if (mode === "feed" && canManage && item.reports) byText += ` · ${item.reports} report(s)`;
+    by.textContent = byText;
+
+    const actions = document.createElement("div");
+    actions.className = "sk-actions";
+
+    const youtube = document.createElement("a");
+    youtube.href = `https://www.youtube.com/watch?v=${encodeURIComponent(item.video_id)}`;
+    youtube.target = "_blank";
+    youtube.rel = "noopener noreferrer";
+    youtube.textContent = "Watch on YouTube";
+    actions.appendChild(youtube);
+
+    if (mode === "queue") {
+      actions.appendChild(makeButton("Approve", "", () => act(item.id, "approve")));
+      if (item.status === "pending") {
+        actions.appendChild(makeButton("Reject", "sk-danger", () => act(item.id, "reject")));
+      } else {
+        actions.appendChild(makeButton("Remove", "sk-danger", () => act(item.id, "remove")));
+      }
+    } else {
+      if (!item.mine && !item.reported_by_me) {
+        actions.appendChild(makeButton("Report", "sk-quiet", () => report(item.id)));
+      } else if (item.reported_by_me) {
+        const done = document.createElement("span");
+        done.className = "sk-by";
+        done.textContent = "Reported";
+        actions.appendChild(done);
+      }
+
+      if (canManage) {
+        actions.appendChild(makeButton("Remove", "sk-danger", () => act(item.id, "remove")));
+      }
+    }
+
+    body.append(title, by, actions);
+    article.append(media, body);
+    return article;
+  }
+
+  function showFeed(items) {
+    feedEl.replaceChildren();
+
+    if (items.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "No skits yet. Be the first to submit one!";
+      feedEl.appendChild(empty);
+      return;
+    }
+
+    for (const item of items) feedEl.appendChild(skitCard(item, "feed"));
+  }
+
+  function showMine(items) {
+    mineList.replaceChildren();
+    mineBox.hidden = items.length === 0;
+
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.className = "sk-row";
+
+      const title = document.createElement("p");
+      title.textContent = item.title;
+
+      const state = document.createElement("small");
+      state.textContent = item.status === "pending" ? "Waiting for approval" : "Not approved";
+
+      row.append(title, state);
+      mineList.appendChild(row);
+    }
+  }
+
+  function showQueue(items) {
+    queueList.replaceChildren();
+    queueBox.hidden = !canManage;
+
+    if (canManage && items.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "Nothing to review.";
+      queueList.appendChild(empty);
+      return;
+    }
+
+    for (const item of items) queueList.appendChild(skitCard(item, "queue"));
+  }
+
+  async function loadAll() {
+    try {
+      const feed = await api("/skits/feed");
+      if (!feed.ok) throw new Error("feed failed");
+
+      canManage = Boolean(feed.data.can_manage);
+      showFeed(feed.data.skits || []);
+
+      const mine = await api("/skits/mine");
+      if (mine.ok) showMine(mine.data.skits || []);
+
+      if (canManage) {
+        const queue = await api("/skits/admin");
+        if (queue.ok) showQueue(queue.data.queue || []);
+      } else {
+        queueBox.hidden = true;
+      }
+    } catch (error) {
+      feedEl.innerHTML = '<p class="error">Could not load skits. Please try again.</p>';
+    }
+  }
+
+  async function act(id, action) {
+    const result = await api(`/skits/${id}/${action}`, "POST");
+    if (!result.ok) window.alert(errorText(result));
+    await loadAll();
+  }
+
+  async function report(id) {
+    if (!window.confirm("Report this skit to the Pitchside team?")) return;
+
+    const result = await api(`/skits/${id}/report`, "POST");
+    if (!result.ok) window.alert(errorText(result));
+    await loadAll();
+  }
+
+  document.getElementById("open-form").addEventListener("click", () => {
+    formEl.hidden = !formEl.hidden;
+  });
+
+  formEl.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    submitBtn.disabled = true;
+    statusEl.textContent = "Sending...";
+
+    const result = await api("/skits/submit", "POST", {
+      title: document.getElementById("skit-title").value.trim(),
+      url: document.getElementById("skit-url").value.trim(),
+      confirm: document.getElementById("skit-confirm").checked,
+    });
+
+    submitBtn.disabled = false;
+
+    if (!result.ok) {
+      statusEl.textContent = errorText(result);
+      return;
+    }
+
+    statusEl.textContent = "Sent! Your skit will appear after it is approved.";
+    document.getElementById("skit-title").value = "";
+    document.getElementById("skit-url").value = "";
+    document.getElementById("skit-confirm").checked = false;
+    await loadAll();
+  });
+
+  loadAll();
+</script>
+{% endblock %}
