@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from app import models  # Register all SQLAlchemy models before create_all.
 from app.database import Base, SessionLocal, engine
 from app.models import User
-from app.routers import auth, chat, matches, private_chat, match_chat, highlights, skits
+from app.routers import auth, chat, matches, password_reset, private_chat, match_chat, highlights, skits
 from app.security import COOKIE_NAME, read_auth_token
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -74,6 +74,7 @@ app.include_router(private_chat.router)
 app.include_router(match_chat.router)
 app.include_router(highlights.router)
 app.include_router(skits.router)
+app.include_router(password_reset.router)
 
 
 def render_page(request: Request, page: str, subtitle: str, endpoint: str, empty_text: str, slug: str = ""):

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Reset a password · Pitchside{% endblock %}
+
+{% block style %}
+.ar-card { margin-top: 12px; padding: 16px; background: var(--card); border-radius: 12px; }
+.ar-card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.ar-card p { margin: 0 0 12px; color: var(--muted); font-size: .9rem; }
+.ar-card input[type="text"] { width: 100%; padding: 12px; border: 1px solid #2a5a40; border-radius: 8px; background: var(--bg); color: var(--text); font-size: 16px; box-sizing: border-box; }
+.ar-btn { margin-top: 10px; padding: 0 16px; min-height: 44px; border: 0; border-radius: 8px; background: var(--accent); color: #06210f; font-weight: 700; cursor: pointer; }
+.ar-btn:disabled { opacity: .5; cursor: wait; }
+#ar-status { min-height: 18px; margin-top: 8px; color: var(--muted); font-size: .85rem; }
+#ar-status.error { color: #ff8a80; }
+#ar-result[hidden] { display: none; }
+.ar-warn { margin-top: 10px; color: var(--muted); font-size: .8rem; }
+{% endblock %}
+
+{% block content %}
+<section class="ar-card">
+  <h2>Reset a password</h2>
+  <p>Enter the person's username. You get a link that works for one hour. Send it only to the owner of the account.</p>
+  <form id="ar-form">
+    <input id="ar-username" type="text" maxlength="30" placeholder="Username"
+           autocomplete="off" autocapitalize="none" spellcheck="false" required>
+    <button id="ar-submit" type="submit" class="ar-btn">Create reset link</button>
+  </form>
+  <div id="ar-status" role="status" aria-live="polite"></div>
+</section>
+
+<section class="ar-card" id="ar-result" hidden>
+  <h2 id="ar-for"></h2>
+  <input id="ar-link" type="text" readonly>
+  <button id="ar-copy" type="button" class="ar-btn">Copy link</button>
+  <p class="ar-warn">The link works once, for one hour. Anyone who has it can set that account's password, so send it privately to the real owner.</p>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+  const form = document.getElementById("ar-form");
+  const usernameInput = document.getElementById("ar-username");
+  const submit = document.getElementById("ar-submit");
+  const statusEl = document.getElementById("ar-status");
+  const resultBox = document.getElementById("ar-result");
+  const forEl = document.getElementById("ar-for");
+  const linkInput = document.getElementById("ar-link");
+  const copyButton = document.getElementById("ar-copy");
+
+  function setStatus(text, isError) {
+    statusEl.textContent = text;
+    statusEl.className = isError ? "error" : "";
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    submit.disabled = true;
+    resultBox.hidden = true;
+    setStatus("Creating the link...", false);
+
+    try {
+      const response = await fetch("/admin/reset-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: usernameInput.value.trim() }),
+      });
+
+      if (response.status === 401) {
+        window.location.href = "/auth/login?next=/admin/reset";
+        return;
+      }
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (response.status === 422) {
+          setStatus("A username has 3 to 30 letters, numbers or underscores.", true);
+        } else {
+          setStatus(typeof data.detail === "string" ? data.detail : "Something went wrong.", true);
+        }
+        return;
+      }
+
+      forEl.textContent = `Reset link for ${data.username} (valid ${data.expires_in_minutes} minutes)`;
+      linkInput.value = data.link;
+      resultBox.hidden = false;
+      copyButton.textContent = "Copy link";
+      setStatus("", false);
+
+    } catch (error) {
+      setStatus("Could not reach the server.", true);
+
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  copyButton.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(linkInput.value);
+    } catch (_) {
+      linkInput.select();
+      document.execCommand("copy");
+    }
+    copyButton.textContent = "Copied";
+  });
+</script>
+{% endblock %}
