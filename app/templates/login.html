@@ -71,6 +71,9 @@
     color: #aab8c4;
     font-size: 18px;
 }
+.forgot { margin-top: 12px; font-size: 0.9rem; }
+.forgot summary { cursor: pointer; color: #65d995; padding: 8px 0; }
+.forgot p { color: #aab8c4; margin: 4px 0 0; line-height: 1.4; }
     </style>
 </head>
 <body>
@@ -113,6 +116,14 @@
     </form>
 
     <p id="message" role="status" aria-live="polite"></p>
+        <details class="forgot">
+        <summary>Forgot your password?</summary>
+        <p>
+            Pitchside has no automatic reset yet. Message the admin from the phone or chat account
+            you normally use: "WhatsApp +234-8164431360 ...".
+            They will check if it is you and send you a one-time link to choose a new password.
+        </p>
+    </details>
     <p>New to Pitchside? <a href="/auth/register">Create an account</a></p>
     <p><a href="/">Back to Pitchside</a></p>
 </main>
