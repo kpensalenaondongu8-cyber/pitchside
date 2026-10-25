@@ -146,3 +146,25 @@ class SkitReport(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+class PrivateRead(Base):
+    """The id of the last private message a user has read in one conversation."""
+
+    __tablename__ = "private_reads"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "user_id", name="uq_private_read"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(
+        Integer,
+        ForeignKey("private_conversations.id"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    last_read_id = Column(Integer, nullable=False, default=0)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )

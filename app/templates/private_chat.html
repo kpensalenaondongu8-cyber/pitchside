@@ -88,13 +88,14 @@
         .conversation {
             display: block;
             width: 100%;
-            padding: 15px;
+            padding: 14px 15px;
             text-align: left;
             color: #f5f7fa;
             background: transparent;
             border: 0;
             border-bottom: 1px solid #2d3b46;
             cursor: pointer;
+            font: inherit;
         }
 
         .conversation:hover,
@@ -102,16 +103,58 @@
             background: #253943;
         }
 
-        .conversation strong {
-            display: block;
-            overflow-wrap: anywhere;
+        .conv-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
         }
 
-        .conversation small {
-            display: block;
-            margin-top: 5px;
+        .conv-name {
+            overflow: hidden;
+            font-weight: bold;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .conv-time {
+            flex-shrink: 0;
             color: #aab8c2;
-            font-weight: normal;
+            font-size: 11px;
+        }
+
+        .conv-bottom {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 5px;
+        }
+
+        .conv-preview {
+            overflow: hidden;
+            color: #aab8c2;
+            font-size: 13px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .conversation.has-unread .conv-preview {
+            color: #f5f7fa;
+            font-weight: bold;
+        }
+
+        .unread-badge {
+            flex-shrink: 0;
+            min-width: 20px;
+            padding: 0 6px;
+            border-radius: 10px;
+            background: #54e38e;
+            color: #102018;
+            font-size: 12px;
+            font-weight: bold;
+            line-height: 20px;
+            text-align: center;
         }
 
         .chat-panel {
@@ -138,7 +181,6 @@
             font-size: 13px;
         }
 
-        /* The message area is a vertical flex container. */
         #messages {
             display: flex;
             flex: 1;
@@ -158,10 +200,6 @@
             line-height: 1.6;
         }
 
-        /*
-         * Incoming messages stay on the left.
-         * Explicit width and margin rules make the alignment clearer.
-         */
         .message {
             display: block;
             flex: 0 0 auto;
@@ -177,9 +215,6 @@
             overflow-wrap: anywhere;
         }
 
-        /*
-         * Messages sent by the logged-in user go on the right.
-         */
         .message.mine {
             align-self: flex-end;
             margin-right: 0;
@@ -225,6 +260,7 @@
             border: 1px solid #3b4d59;
             border-radius: 8px;
             outline: none;
+            font-size: 16px;
         }
 
         #message-input:focus {
@@ -364,10 +400,7 @@
 </main>
 
 <script>
-    const conversationList = document.getElementById(
-        "conversation-list"
-    );
-
+    const conversationList = document.getElementById("conversation-list");
     const messagesContainer = document.getElementById("messages");
     const chatTitle = document.getElementById("chat-title");
     const statusText = document.getElementById("status");
@@ -386,6 +419,9 @@
 
     // Remember the last displayed message data to avoid unnecessary redraws.
     let lastMessagesSignature = null;
+
+    // The newest message id we told the server we have read, for each conversation.
+    const lastMarkedRead = new Map();
 
 
     // Make API requests and handle authentication errors.
@@ -417,7 +453,6 @@
     }
 
 
-    // Display a notice to the user.
     function showNotice(message) {
         notice.textContent = message;
     }
@@ -435,7 +470,6 @@
     }
 
 
-    // Format a message timestamp.
     function formatTime(value) {
         if (!value) {
             return "";
@@ -448,6 +482,34 @@
         }
 
         return date.toLocaleString();
+    }
+
+
+    // A short time for the sidebar: the hour today, otherwise the date.
+    function shortTime(value) {
+        if (!value) {
+            return "";
+        }
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return "";
+        }
+
+        const now = new Date();
+
+        if (date.toDateString() === now.toDateString()) {
+            return date.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit"
+            });
+        }
+
+        return date.toLocaleDateString([], {
+            day: "numeric",
+            month: "short"
+        });
     }
 
 
@@ -466,25 +528,64 @@
         }
 
         for (const conversation of conversations) {
+            const isActive = sameId(conversation.id, activeConversationId);
+
+            // The conversation you are looking at counts as read.
+            const unread = isActive ? 0 : (conversation.unread || 0);
+
             const button = document.createElement("button");
 
             button.type = "button";
             button.className = "conversation";
 
-            if (sameId(conversation.id, activeConversationId)) {
+            if (isActive) {
                 button.classList.add("active");
             }
 
-            const username = document.createElement("strong");
+            if (unread > 0) {
+                button.classList.add("has-unread");
+            }
 
+            const top = document.createElement("div");
+            top.className = "conv-top";
+
+            const username = document.createElement("span");
+            username.className = "conv-name";
             username.textContent =
                 conversation.other_user?.username || "User";
 
-            const subtitle = document.createElement("small");
+            const time = document.createElement("span");
+            time.className = "conv-time";
+            time.textContent = conversation.last_message
+                ? shortTime(conversation.last_message.created_at)
+                : "";
 
-            subtitle.textContent = "Private conversation";
+            top.append(username, time);
 
-            button.append(username, subtitle);
+            const bottom = document.createElement("div");
+            bottom.className = "conv-bottom";
+
+            const preview = document.createElement("span");
+            preview.className = "conv-preview";
+
+            if (conversation.last_message) {
+                preview.textContent =
+                    (conversation.last_message.mine ? "You: " : "") +
+                    conversation.last_message.text;
+            } else {
+                preview.textContent = "No messages yet";
+            }
+
+            bottom.appendChild(preview);
+
+            if (unread > 0) {
+                const badge = document.createElement("span");
+                badge.className = "unread-badge";
+                badge.textContent = unread > 99 ? "99+" : String(unread);
+                bottom.appendChild(badge);
+            }
+
+            button.append(top, bottom);
 
             button.addEventListener("click", async () => {
                 await openConversation(conversation.id);
@@ -504,6 +605,42 @@
             : [];
 
         renderConversations();
+    }
+
+
+    /*
+     * Tell the server that everything up to this message has been read,
+     * but only when the page is visible and the id has changed.
+     */
+    function markRead(conversationId, newestId) {
+        if (document.hidden || newestId === undefined || newestId === null) {
+            return;
+        }
+
+        const key = String(conversationId);
+
+        if (lastMarkedRead.get(key) === newestId) {
+            return;
+        }
+
+        lastMarkedRead.set(key, newestId);
+
+        const conversation = conversations.find(
+            item => sameId(item.id, conversationId)
+        );
+
+        if (conversation && conversation.unread) {
+            conversation.unread = 0;
+            renderConversations();
+        }
+
+        fetch(`/private/conversations/${conversationId}/read`, {
+            method: "POST",
+            credentials: "same-origin",
+        }).catch(() => {
+            // Try again at the next check.
+            lastMarkedRead.delete(key);
+        });
     }
 
 
@@ -571,6 +708,11 @@
             const messages = Array.isArray(data.messages)
                 ? data.messages
                 : [];
+
+            // The conversation is open and visible, so its newest message counts as read.
+            if (messages.length > 0) {
+                markRead(conversationId, messages[messages.length - 1].id);
+            }
 
             /*
              * Only redraw the message list when its data changes.
@@ -691,14 +833,18 @@
             showNotice(error.message);
         }
 
-        // Check for new messages every second.
+        // Check for new messages every 3 seconds, but not while the tab is hidden.
         refreshTimer = setInterval(async () => {
+            if (document.hidden) {
+                return;
+            }
+
             try {
                 await loadMessages();
             } catch (error) {
                 showNotice(error.message);
             }
-        }, 1000);
+        }, 3000);
     }
 
 
@@ -787,6 +933,9 @@
             lastMessagesSignature = null;
             await loadMessages();
 
+            // Update the preview in the sidebar straight away.
+            loadConversations().catch(() => {});
+
         } catch (error) {
             showNotice(error.message);
 
@@ -801,11 +950,32 @@
     });
 
 
+    // Refresh the sidebar (previews and unread badges) every 5 seconds while the tab is visible.
+    setInterval(() => {
+        if (document.hidden || currentUser === null) {
+            return;
+        }
+
+        loadConversations().catch(() => {});
+    }, 5000);
+
+
+    // When you come back to the tab, refresh straight away.
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden || currentUser === null) {
+            return;
+        }
+
+        loadConversations().catch(() => {});
+        loadMessages().catch(() => {});
+    });
+
+
     // Initialise the page.
     async function initialise() {
         try {
-    const userData = await apiRequest("/auth/me");
-    currentUser = userData.user;
+            const userData = await apiRequest("/auth/me");
+            currentUser = userData.user;
             await loadConversations();
 
             // Check whether Group Chat sent us a selected user ID.
@@ -820,7 +990,7 @@
                 return;
             }
 
-            // Open the first existing conversation if one is available.
+            // Open the first (most recent) conversation if one is available.
             if (conversations.length > 0) {
                 await openConversation(conversations[0].id);
             }

@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import PrivateConversation, PrivateMessage, User
+from app.models import PrivateConversation, PrivateMessage, PrivateRead, User
 from app.ratelimit import RateLimiter
 from app.routers.auth import get_current_user, get_db
 from app.timeutils import to_utc_iso
@@ -23,14 +23,31 @@ router = APIRouter(
 BASE_DIR = Path(__file__).resolve().parent.parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+PREVIEW_LENGTH = 80
+
 # 5 private messages per 10 seconds for each user.
 private_message_limiter = RateLimiter(max_events=5, per_seconds=10)
 # 20 new conversations per hour for each user.
 new_conversation_limiter = RateLimiter(max_events=20, per_seconds=3600)
+# 60 "mark as read" calls per minute for each user.
+read_limiter = RateLimiter(max_events=60, per_seconds=60)
 
 
 class PrivateMessageInput(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
+
+
+def as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def make_preview(text: str) -> str:
+    flat = " ".join(text.split())
+    if len(flat) > PREVIEW_LENGTH:
+        return flat[:PREVIEW_LENGTH].rstrip() + "…"
+    return flat
 
 
 @router.get("/messages", response_class=HTMLResponse)
@@ -78,6 +95,39 @@ def find_conversation(db: Session, user_one_id: int, user_two_id: int):
         )
         .first()
     )
+
+
+# The fixed word "unread" is a separate path, so it never clashes with the routes below.
+@router.get("/unread")
+def total_unread(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    total = (
+        db.query(func.count(PrivateMessage.id))
+        .join(
+            PrivateConversation,
+            PrivateConversation.id == PrivateMessage.conversation_id,
+        )
+        .outerjoin(
+            PrivateRead,
+            and_(
+                PrivateRead.conversation_id == PrivateMessage.conversation_id,
+                PrivateRead.user_id == current_user.id,
+            ),
+        )
+        .filter(
+            or_(
+                PrivateConversation.user_one_id == current_user.id,
+                PrivateConversation.user_two_id == current_user.id,
+            ),
+            PrivateMessage.sender_id != current_user.id,
+            PrivateMessage.id > func.coalesce(PrivateRead.last_read_id, 0),
+        )
+        .scalar()
+    )
+
+    return {"unread": int(total or 0)}
 
 
 @router.post("/conversations", status_code=201)
@@ -157,26 +207,61 @@ def list_conversations(
                 PrivateConversation.user_two_id == current_user.id,
             )
         )
-        .order_by(PrivateConversation.id.desc())
         .all()
     )
+
+    if not conversations:
+        return {"conversations": []}
+
+    conversation_ids = [c.id for c in conversations]
 
     def other_id(conversation):
         if conversation.user_one_id == current_user.id:
             return conversation.user_two_id
         return conversation.user_one_id
 
-    # One query for all the other users, instead of one query per conversation.
-    other_ids = {other_id(c) for c in conversations}
-    users_by_id = {}
+    # One query for all the other users.
+    users_by_id = {
+        user.id: user
+        for user in db.query(User).filter(User.id.in_({other_id(c) for c in conversations})).all()
+    }
 
-    if other_ids:
-        users_by_id = {
-            user.id: user
-            for user in db.query(User).filter(User.id.in_(other_ids)).all()
-        }
+    # One query for the newest message in each conversation.
+    newest_ids = [
+        row[1]
+        for row in db.query(PrivateMessage.conversation_id, func.max(PrivateMessage.id))
+        .filter(PrivateMessage.conversation_id.in_(conversation_ids))
+        .group_by(PrivateMessage.conversation_id)
+        .all()
+    ]
 
-    results = []
+    last_by_conversation = {}
+
+    if newest_ids:
+        for message in db.query(PrivateMessage).filter(PrivateMessage.id.in_(newest_ids)).all():
+            last_by_conversation[message.conversation_id] = message
+
+    # One query for the unread count in each conversation.
+    unread_rows = (
+        db.query(PrivateMessage.conversation_id, func.count(PrivateMessage.id))
+        .outerjoin(
+            PrivateRead,
+            and_(
+                PrivateRead.conversation_id == PrivateMessage.conversation_id,
+                PrivateRead.user_id == current_user.id,
+            ),
+        )
+        .filter(
+            PrivateMessage.conversation_id.in_(conversation_ids),
+            PrivateMessage.sender_id != current_user.id,
+            PrivateMessage.id > func.coalesce(PrivateRead.last_read_id, 0),
+        )
+        .group_by(PrivateMessage.conversation_id)
+        .all()
+    )
+    unread_by_conversation = {row[0]: int(row[1]) for row in unread_rows}
+
+    entries = []
 
     for conversation in conversations:
         other_user = users_by_id.get(other_id(conversation))
@@ -184,16 +269,32 @@ def list_conversations(
         if other_user is None:
             continue
 
-        results.append({
+        last = last_by_conversation.get(conversation.id)
+        activity = as_utc(last.created_at if last else conversation.created_at)
+
+        entries.append((activity, {
             "id": conversation.id,
             "other_user": {
                 "id": other_user.id,
                 "username": other_user.username,
             },
             "created_at": to_utc_iso(conversation.created_at),
-        })
+            "last_message": (
+                {
+                    "text": make_preview(last.message),
+                    "created_at": to_utc_iso(last.created_at),
+                    "mine": last.sender_id == current_user.id,
+                }
+                if last
+                else None
+            ),
+            "unread": unread_by_conversation.get(conversation.id, 0),
+        }))
 
-    return {"conversations": results}
+    # Newest activity first.
+    entries.sort(key=lambda entry: entry[0], reverse=True)
+
+    return {"conversations": [entry[1] for entry in entries]}
 
 
 @router.get("/conversations/{conversation_id}/messages")
@@ -275,3 +376,66 @@ def send_private_message(
             "created_at": to_utc_iso(new_message.created_at),
         }
     }
+
+
+@router.post("/conversations/{conversation_id}/read")
+def mark_conversation_read(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_conversation_for_user(conversation_id, current_user.id, db)
+
+    if not read_limiter.allow(current_user.id):
+        raise HTTPException(status_code=429, detail="Too many requests. Please slow down.")
+
+    newest = (
+        db.query(func.max(PrivateMessage.id))
+        .filter(PrivateMessage.conversation_id == conversation_id)
+        .scalar()
+    ) or 0
+
+    row = (
+        db.query(PrivateRead)
+        .filter(
+            PrivateRead.conversation_id == conversation_id,
+            PrivateRead.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    now = datetime.now(timezone.utc)
+
+    if row is None:
+        db.add(PrivateRead(
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            last_read_id=newest,
+            updated_at=now,
+        ))
+
+        try:
+            db.commit()
+        except IntegrityError:
+            # Another request created the row at the same moment: update that one.
+            db.rollback()
+            row = (
+                db.query(PrivateRead)
+                .filter(
+                    PrivateRead.conversation_id == conversation_id,
+                    PrivateRead.user_id == current_user.id,
+                )
+                .first()
+            )
+
+            if row is not None and newest > row.last_read_id:
+                row.last_read_id = newest
+                row.updated_at = now
+                db.commit()
+
+    elif newest > row.last_read_id:
+        row.last_read_id = newest
+        row.updated_at = now
+        db.commit()
+
+    return {"ok": True}

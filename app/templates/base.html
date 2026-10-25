@@ -83,6 +83,17 @@
         const response = await fetch("/auth/me");
         if (!response.ok) return;
         const data = await response.json();
+
+        const messages = document.createElement("a");
+        messages.href = "/private/messages";
+        messages.textContent = "Messages";
+        messages.style.cssText = "display:inline-flex;align-items:center;gap:6px;color:var(--text);text-decoration:none;font-weight:600";
+
+        const badge = document.createElement("span");
+        badge.hidden = true;
+        badge.style.cssText = "min-width:20px;padding:0 6px;border-radius:10px;background:var(--accent);color:#06210f;font-size:.75rem;font-weight:700;line-height:20px;text-align:center";
+        messages.appendChild(badge);
+
         const label = document.createElement("span");
         label.textContent = data.user.username;
         label.style.color = "var(--accent)";
@@ -93,7 +104,22 @@
           await fetch("/auth/logout", {method: "POST"});
           window.location.href = "/auth/login";
         });
-        area.replaceChildren(label, logout);
+        area.replaceChildren(messages, label, logout);
+
+        // The number of unread private messages, refreshed every 30 seconds while the tab is visible.
+        async function refreshUnread() {
+          if (document.hidden) return;
+          try {
+            const r = await fetch("/private/unread");
+            if (!r.ok) return;
+            const d = await r.json();
+            badge.textContent = d.unread > 99 ? "99+" : String(d.unread);
+            badge.hidden = !d.unread;
+          } catch (_) { /* the badge is optional */ }
+        }
+        refreshUnread();
+        setInterval(refreshUnread, 30000);
+        document.addEventListener("visibilitychange", refreshUnread);
       } catch (_) { /* Keep the login links if the auth check cannot reach the server. */ }
     })();
 
