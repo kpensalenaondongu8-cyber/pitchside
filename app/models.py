@@ -168,3 +168,36 @@ class PrivateRead(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+class MessageDeletion(Base):
+    """A deleted message. scope "everyone" leaves a placeholder for all; "self" hides it for one user."""
+
+    __tablename__ = "message_deletions"
+    __table_args__ = (
+        UniqueConstraint("chat_type", "message_id", "user_id", "scope", name="uq_message_deletion"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    chat_type = Column(String(10), nullable=False)   # "group" or "private"
+    message_id = Column(Integer, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    scope = Column(String(10), nullable=False)       # "everyone" or "self"
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class GroupRead(Base):
+    """The id of the newest group chat message a user's screen has displayed."""
+
+    __tablename__ = "group_reads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    last_read_id = Column(Integer, nullable=False, default=0)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
