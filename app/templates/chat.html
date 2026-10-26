@@ -328,6 +328,26 @@
                 padding: 7px 10px;
             }
         }
+       .message.deleted .message-text {
+    font-style: italic;
+    opacity: 0.7;
+    background: transparent;
+    border: 1px dashed #40515f;
+}
+
+.delete-button {
+    margin-top: 2px;
+    padding: 6px 8px;
+    background: none;
+    border: 0;
+    color: #8999a7;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.delete-button:hover {
+    color: #ff8a80;
+} 
     </style>
 </head>
 
@@ -419,6 +439,124 @@
         }
 
         /* Display one group chat message. */
+               const messageElements = new Map();   // message id -> its elements
+        let newestShown = 0;
+        let seenTimer = null;
+
+        /* Tell the server which message we have displayed (only while the page is visible). */
+        function reportSeen() {
+            if (document.hidden || newestShown === 0 || seenTimer) {
+                return;
+            }
+
+            seenTimer = setTimeout(async function () {
+                seenTimer = null;
+
+                if (document.hidden) {
+                    return;
+                }
+
+                try {
+                    await fetch("/chat/read", {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ last_id: newestShown })
+                    });
+                } catch (error) {
+                    /* The next message tries again. */
+                }
+            }, 400);
+        }
+
+        function showDeleted(entry, deletedByMe, name) {
+            entry.text.textContent = deletedByMe
+                ? "You deleted this message"
+                : name + " deleted this message";
+
+            entry.wrapper.classList.add("deleted");
+
+            if (entry.deleteButton) {
+                entry.deleteButton.remove();
+                entry.deleteButton = null;
+            }
+        }
+
+        function markDeleted(id, name) {
+            const entry = messageElements.get(id);
+
+            if (entry) {
+                showDeleted(entry, name === currentUsername, name);
+            }
+        }
+
+        function removeMessageFromView(id) {
+            const entry = messageElements.get(id);
+
+            if (entry) {
+                entry.wrapper.remove();
+                messageElements.delete(id);
+            }
+        }
+
+        async function sendDelete(id, scope) {
+            try {
+                const response = await fetch("/chat/messages/" + id + "/delete", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ scope: scope })
+                });
+
+                const data = await response.json().catch(function () { return {}; });
+
+                return {
+                    ok: response.ok,
+                    status: response.status,
+                    detail: typeof data.detail === "string"
+                        ? data.detail
+                        : "Could not delete the message."
+                };
+            } catch (error) {
+                return { ok: false, status: 0, detail: "Could not reach the server." };
+            }
+        }
+
+        async function deleteMessage(id) {
+            if (!window.confirm("Delete this message?")) {
+                return;
+            }
+
+            const result = await sendDelete(id, "everyone");
+
+            if (result.ok) {
+                markDeleted(id, currentUsername);
+                return;
+            }
+
+            if (result.status === 409) {
+                if (!window.confirm(
+                    "Someone has already seen this message, so it cannot be deleted " +
+                    "for everyone. Delete it just for you?"
+                )) {
+                    return;
+                }
+
+                const own = await sendDelete(id, "self");
+
+                if (own.ok) {
+                    removeMessageFromView(id);
+                } else {
+                    statusElement.textContent = own.detail;
+                }
+
+                return;
+            }
+
+            statusElement.textContent = result.detail;
+        }
+
+        /* Display one group chat message. */
 
         function addMessage(message) {
             if (displayedMessageIds.has(message.id)) {
@@ -433,24 +571,20 @@
                 empty.remove();
             }
 
+            const mine = message.username === currentUsername;
+
             const wrapper = document.createElement("div");
 
-            wrapper.className =
-                message.username === currentUsername
-                    ? "message own-message"
-                    : "message other-message";
+            wrapper.className = mine
+                ? "message own-message"
+                : "message other-message";
 
             const name = document.createElement("div");
             name.className = "message-name";
-
-            name.textContent =
-                message.username === currentUsername
-                    ? "You"
-                    : message.username;
+            name.textContent = mine ? "You" : message.username;
 
             const text = document.createElement("div");
             text.className = "message-text";
-            text.textContent = message.message;
 
             const time = document.createElement("div");
             time.className = "message-time";
@@ -463,10 +597,39 @@
             });
 
             wrapper.append(name, text, time);
+
+            const entry = { wrapper: wrapper, text: text, deleteButton: null };
+
+            if (message.deleted) {
+                showDeleted(entry, mine, message.username);
+            } else {
+                text.textContent = message.message;
+
+                if (mine) {
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "delete-button";
+                    remove.textContent = "Delete";
+                    remove.addEventListener("click", function () {
+                        deleteMessage(message.id);
+                    });
+
+                    wrapper.appendChild(remove);
+                    entry.deleteButton = remove;
+                }
+            }
+
+            messageElements.set(message.id, entry);
             messagesContainer.appendChild(wrapper);
 
             messagesContainer.scrollTop =
                 messagesContainer.scrollHeight;
+
+            if (message.id > newestShown) {
+                newestShown = message.id;
+            }
+
+            reportSeen();
         }
 
         /* Show an empty-state message when there are no messages. */

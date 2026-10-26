@@ -1,1016 +1,542 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Private Messages | Pitchside</title>
-
-    <style>
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #101820;
-            color: #f5f7fa;
-        }
-
-        header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 16px 22px;
-            background: #182630;
-            border-bottom: 1px solid #2d3b46;
-        }
-
-        header h1 {
-            margin: 0;
-            color: #54e38e;
-            font-size: 22px;
-        }
-
-        header a {
-            color: #54e38e;
-            text-decoration: none;
-        }
-
-        header a:hover {
-            text-decoration: underline;
-        }
-
-        .container {
-            display: grid;
-            grid-template-columns: 280px minmax(0, 1fr);
-            gap: 18px;
-            max-width: 1200px;
-            height: calc(100dvh - 75px);
-            min-height: 400px;
-            margin: 0 auto;
-            padding: 18px;
-        }
-
-        .sidebar,
-        .chat-panel {
-            min-width: 0;
-            background: #182630;
-            border: 1px solid #2d3b46;
-            border-radius: 12px;
-        }
-
-        .sidebar {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .sidebar-top {
-            flex-shrink: 0;
-            padding: 16px;
-            border-bottom: 1px solid #2d3b46;
-        }
-
-        .sidebar-top h2 {
-            margin: 0;
-            font-size: 18px;
-        }
-
-        #conversation-list {
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-        }
-
-        .conversation {
-            display: block;
-            width: 100%;
-            padding: 14px 15px;
-            text-align: left;
-            color: #f5f7fa;
-            background: transparent;
-            border: 0;
-            border-bottom: 1px solid #2d3b46;
-            cursor: pointer;
-            font: inherit;
-        }
-
-        .conversation:hover,
-        .conversation.active {
-            background: #253943;
-        }
-
-        .conv-top {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-        }
-
-        .conv-name {
-            overflow: hidden;
-            font-weight: bold;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .conv-time {
-            flex-shrink: 0;
-            color: #aab8c2;
-            font-size: 11px;
-        }
-
-        .conv-bottom {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            margin-top: 5px;
-        }
-
-        .conv-preview {
-            overflow: hidden;
-            color: #aab8c2;
-            font-size: 13px;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .conversation.has-unread .conv-preview {
-            color: #f5f7fa;
-            font-weight: bold;
-        }
-
-        .unread-badge {
-            flex-shrink: 0;
-            min-width: 20px;
-            padding: 0 6px;
-            border-radius: 10px;
-            background: #54e38e;
-            color: #102018;
-            font-size: 12px;
-            font-weight: bold;
-            line-height: 20px;
-            text-align: center;
-        }
-
-        .chat-panel {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .chat-header {
-            flex-shrink: 0;
-            padding: 17px;
-            border-bottom: 1px solid #2d3b46;
-        }
-
-        .chat-header h2 {
-            margin: 0;
-            font-size: 18px;
-            overflow-wrap: anywhere;
-        }
-
-        #status {
-            margin-top: 7px;
-            color: #aab8c2;
-            font-size: 13px;
-        }
-
-        #messages {
-            display: flex;
-            flex: 1;
-            flex-direction: column;
-            gap: 12px;
-            min-height: 0;
-            padding: 18px;
-            overflow-x: hidden;
-            overflow-y: auto;
-            scroll-behavior: smooth;
-        }
-
-        .empty-state {
-            margin: auto;
-            color: #aab8c2;
-            text-align: center;
-            line-height: 1.6;
-        }
-
-        .message {
-            display: block;
-            flex: 0 0 auto;
-            width: fit-content;
-            max-width: 80%;
-            min-width: 60px;
-            align-self: flex-start;
-            margin-right: auto;
-            margin-left: 0;
-            padding: 11px 13px;
-            background: #253943;
-            border-radius: 12px 12px 12px 3px;
-            overflow-wrap: anywhere;
-        }
-
-        .message.mine {
-            align-self: flex-end;
-            margin-right: 0;
-            margin-left: auto;
-            background: #176b45;
-            border-radius: 12px 12px 3px 12px;
-        }
-
-        .message .sender {
-            margin-bottom: 5px;
-            color: #aeeec8;
-            font-size: 12px;
-            font-weight: bold;
-        }
-
-        .message .text {
-            white-space: pre-wrap;
-            line-height: 1.45;
-        }
-
-        .message time {
-            display: block;
-            margin-top: 7px;
-            color: #d0ded7;
-            font-size: 11px;
-            text-align: right;
-        }
-
-        #message-form {
-            display: flex;
-            flex-shrink: 0;
-            gap: 10px;
-            padding: 14px;
-            border-top: 1px solid #2d3b46;
-        }
-
-        #message-input {
-            flex: 1;
-            min-width: 0;
-            padding: 12px;
-            color: #f5f7fa;
-            background: #101820;
-            border: 1px solid #3b4d59;
-            border-radius: 8px;
-            outline: none;
-            font-size: 16px;
-        }
-
-        #message-input:focus {
-            border-color: #54e38e;
-        }
-
-        #send-button {
-            color: #102018;
-            background: #54e38e;
-            border: 0;
-            border-radius: 7px;
-            padding: 11px 14px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        #send-button:disabled {
-            cursor: not-allowed;
-            opacity: 0.5;
-        }
-
-        .notice {
-            padding: 10px 14px;
-            color: #f5d58b;
-            font-size: 13px;
-        }
-
-        @media (max-width: 650px) {
-            header {
-                padding: 14px;
-            }
-
-            header h1 {
-                font-size: 19px;
-            }
-
-            .container {
-                display: flex;
-                flex-direction: column;
-                height: auto;
-                min-height: calc(100dvh - 60px);
-                padding: 10px;
-                gap: 10px;
-            }
-
-            .sidebar {
-                flex: none;
-                max-height: 220px;
-            }
-
-            .sidebar-top {
-                padding: 12px;
-            }
-
-            #conversation-list {
-                min-height: 0;
-            }
-
-            .chat-panel {
-                flex: 1;
-                min-height: 55dvh;
-            }
-
-            #messages {
-                padding: 12px;
-            }
-
-            .message {
-                max-width: 90%;
-            }
-
-            #message-form {
-                padding: 10px;
-            }
-        }
-    </style>
-</head>
-
-<body>
-
-<header>
-    <h1>Pitchside</h1>
-
-    <nav>
-        <a href="/">Matches</a>
-        &nbsp; | &nbsp;
-        <a href="/chat">Group Chat</a>
-    </nav>
-</header>
-
-<main class="container">
-
-    <aside class="sidebar">
-        <div class="sidebar-top">
-            <h2>Private Messages</h2>
-        </div>
-
-        <div id="conversation-list">
-            <p class="notice">Loading conversations...</p>
-        </div>
-    </aside>
-
-    <section class="chat-panel">
-
-        <div class="chat-header">
-            <h2 id="chat-title">Select a conversation</h2>
-            <div id="status">Your private messages appear here.</div>
-        </div>
-
-        <div id="messages" aria-live="polite">
-            <p class="empty-state">
-                Choose a conversation to view your messages.
-            </p>
-        </div>
-
-        <div id="notice" class="notice" role="status"></div>
-
-        <form id="message-form">
-            <input
-                id="message-input"
-                type="text"
-                maxlength="1000"
-                placeholder="Write a message..."
-                autocomplete="off"
-                aria-label="Your message"
-                disabled
-                required
-            >
-
-            <button id="send-button" type="submit" disabled>
-                Send
-            </button>
-        </form>
-
-    </section>
-
-</main>
-
-<script>
-    const conversationList = document.getElementById("conversation-list");
-    const messagesContainer = document.getElementById("messages");
-    const chatTitle = document.getElementById("chat-title");
-    const statusText = document.getElementById("status");
-    const notice = document.getElementById("notice");
-    const messageForm = document.getElementById("message-form");
-    const messageInput = document.getElementById("message-input");
-    const sendButton = document.getElementById("send-button");
-
-    let currentUser = null;
-    let activeConversationId = null;
-    let conversations = [];
-    let refreshTimer = null;
-
-    // Prevent overlapping message requests for the same conversation.
-    const loadingConversations = new Set();
-
-    // Remember the last displayed message data to avoid unnecessary redraws.
-    let lastMessagesSignature = null;
-
-    // The newest message id we told the server we have read, for each conversation.
-    const lastMarkedRead = new Map();
-
-
-    // Make API requests and handle authentication errors.
-    async function apiRequest(url, options = {}) {
-        const response = await fetch(url, {
-            credentials: "same-origin",
-            ...options,
-            headers: {
-                ...(options.headers || {}),
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
+from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.deletions import (
+    PRIVATE,
+    SEEN_DETAIL,
+    DeleteInput,
+    deleted_for_everyone_ids,
+    delete_limiter,
+    hidden_ids,
+    load_deletions,
+    record_deletion,
+)
+from app.models import PrivateConversation, PrivateMessage, PrivateRead, User
+from app.ratelimit import RateLimiter
+from app.routers.auth import get_current_user, get_db
+from app.timeutils import to_utc_iso
+
+
+router = APIRouter(
+    prefix="/private",
+    tags=["Private Messaging"],
+)
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+PREVIEW_LENGTH = 80
+
+# 5 private messages per 10 seconds for each user.
+private_message_limiter = RateLimiter(max_events=5, per_seconds=10)
+# 20 new conversations per hour for each user.
+new_conversation_limiter = RateLimiter(max_events=20, per_seconds=3600)
+# 60 "mark as read" calls per minute for each user.
+read_limiter = RateLimiter(max_events=60, per_seconds=60)
+
+
+class PrivateMessageInput(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+
+
+def as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def make_preview(text: str) -> str:
+    flat = " ".join(text.split())
+    if len(flat) > PREVIEW_LENGTH:
+        return flat[:PREVIEW_LENGTH].rstrip() + "…"
+    return flat
+
+
+@router.get("/messages", response_class=HTMLResponse)
+def private_messages_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="private_chat.html",
+        context={},
+    )
+
+
+def get_conversation_for_user(
+    conversation_id: int,
+    user_id: int,
+    db: Session,
+):
+    """Return the conversation only if this user is one of its two participants."""
+    conversation = (
+        db.query(PrivateConversation)
+        .filter(
+            PrivateConversation.id == conversation_id,
+            or_(
+                PrivateConversation.user_one_id == user_id,
+                PrivateConversation.user_two_id == user_id,
+            ),
+        )
+        .first()
+    )
+
+    if conversation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found.",
+        )
+
+    return conversation
+
+
+def find_conversation(db: Session, user_one_id: int, user_two_id: int):
+    return (
+        db.query(PrivateConversation)
+        .filter(
+            PrivateConversation.user_one_id == user_one_id,
+            PrivateConversation.user_two_id == user_two_id,
+        )
+        .first()
+    )
+
+
+# The fixed word "unread" is a separate path, so it never clashes with the routes below.
+@router.get("/unread")
+def total_unread(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    total = (
+        db.query(func.count(PrivateMessage.id))
+        .join(
+            PrivateConversation,
+            PrivateConversation.id == PrivateMessage.conversation_id,
+        )
+        .outerjoin(
+            PrivateRead,
+            and_(
+                PrivateRead.conversation_id == PrivateMessage.conversation_id,
+                PrivateRead.user_id == current_user.id,
+            ),
+        )
+        .filter(
+            or_(
+                PrivateConversation.user_one_id == current_user.id,
+                PrivateConversation.user_two_id == current_user.id,
+            ),
+            PrivateMessage.sender_id != current_user.id,
+            PrivateMessage.id > func.coalesce(PrivateRead.last_read_id, 0),
+            ~PrivateMessage.id.in_(deleted_for_everyone_ids(PRIVATE)),
+        )
+        .scalar()
+    )
+
+    return {"unread": int(total or 0)}
+
+
+@router.post("/conversations", status_code=201)
+def create_conversation(
+    other_user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if other_user_id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot start a conversation with yourself.",
+        )
+
+    other_user = db.query(User).filter(User.id == other_user_id).first()
+
+    if other_user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found.",
+        )
+
+    user_one_id = min(current_user.id, other_user_id)
+    user_two_id = max(current_user.id, other_user_id)
+
+    conversation = find_conversation(db, user_one_id, user_two_id)
+
+    if conversation is None:
+        if not new_conversation_limiter.allow(current_user.id):
+            raise HTTPException(
+                status_code=429,
+                detail="You are starting too many conversations. Please try again later.",
+            )
+
+        conversation = PrivateConversation(
+            user_one_id=user_one_id,
+            user_two_id=user_two_id,
+            created_at=datetime.now(timezone.utc),
+        )
+
+        db.add(conversation)
+
+        try:
+            db.commit()
+            db.refresh(conversation)
+        except IntegrityError:
+            # Another request created it at the same moment: use that one.
+            db.rollback()
+            conversation = find_conversation(db, user_one_id, user_two_id)
+
+            if conversation is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Could not create the conversation.",
+                )
+
+    return {
+        "id": conversation.id,
+        "other_user": {
+            "id": other_user.id,
+            "username": other_user.username,
+        },
+        "created_at": to_utc_iso(conversation.created_at),
+    }
+
+
+@router.get("/conversations")
+def list_conversations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conversations = (
+        db.query(PrivateConversation)
+        .filter(
+            or_(
+                PrivateConversation.user_one_id == current_user.id,
+                PrivateConversation.user_two_id == current_user.id,
+            )
+        )
+        .all()
+    )
+
+    if not conversations:
+        return {"conversations": []}
+
+    conversation_ids = [c.id for c in conversations]
+
+    def other_id(conversation):
+        if conversation.user_one_id == current_user.id:
+            return conversation.user_two_id
+        return conversation.user_one_id
+
+    # One query for all the other users.
+    users_by_id = {
+        user.id: user
+        for user in db.query(User).filter(User.id.in_({other_id(c) for c in conversations})).all()
+    }
+
+    # One query for the newest message in each conversation, skipping the ones this user hid.
+    newest_ids = [
+        row[1]
+        for row in db.query(PrivateMessage.conversation_id, func.max(PrivateMessage.id))
+        .filter(
+            PrivateMessage.conversation_id.in_(conversation_ids),
+            ~PrivateMessage.id.in_(hidden_ids(PRIVATE, current_user.id)),
+        )
+        .group_by(PrivateMessage.conversation_id)
+        .all()
+    ]
+
+    last_by_conversation = {}
+
+    if newest_ids:
+        for message in db.query(PrivateMessage).filter(PrivateMessage.id.in_(newest_ids)).all():
+            last_by_conversation[message.conversation_id] = message
+
+    deleted_for_all, _ = load_deletions(
+        db, PRIVATE, [m.id for m in last_by_conversation.values()], current_user.id
+    )
+
+    # One query for the unread count in each conversation (deleted messages do not count).
+    unread_rows = (
+        db.query(PrivateMessage.conversation_id, func.count(PrivateMessage.id))
+        .outerjoin(
+            PrivateRead,
+            and_(
+                PrivateRead.conversation_id == PrivateMessage.conversation_id,
+                PrivateRead.user_id == current_user.id,
+            ),
+        )
+        .filter(
+            PrivateMessage.conversation_id.in_(conversation_ids),
+            PrivateMessage.sender_id != current_user.id,
+            PrivateMessage.id > func.coalesce(PrivateRead.last_read_id, 0),
+            ~PrivateMessage.id.in_(deleted_for_everyone_ids(PRIVATE)),
+        )
+        .group_by(PrivateMessage.conversation_id)
+        .all()
+    )
+    unread_by_conversation = {row[0]: int(row[1]) for row in unread_rows}
+
+    entries = []
+
+    for conversation in conversations:
+        other_user = users_by_id.get(other_id(conversation))
+
+        if other_user is None:
+            continue
+
+        last = last_by_conversation.get(conversation.id)
+        activity = as_utc(last.created_at if last else conversation.created_at)
+
+        last_message = None
+
+        if last is not None:
+            if last.id in deleted_for_all:
+                mine = last.sender_id == current_user.id
+                last_message = {
+                    "text": "You deleted a message" if mine else "This message was deleted",
+                    "created_at": to_utc_iso(last.created_at),
+                    "mine": False,
+                    "deleted": True,
+                }
+            else:
+                last_message = {
+                    "text": make_preview(last.message),
+                    "created_at": to_utc_iso(last.created_at),
+                    "mine": last.sender_id == current_user.id,
+                    "deleted": False,
+                }
+
+        entries.append((activity, {
+            "id": conversation.id,
+            "other_user": {
+                "id": other_user.id,
+                "username": other_user.username,
             },
-        });
+            "created_at": to_utc_iso(conversation.created_at),
+            "last_message": last_message,
+            "unread": unread_by_conversation.get(conversation.id, 0),
+        }))
 
-        if (response.status === 401) {
-            window.location.href =
-                "/auth/login?next=/private/messages";
+    # Newest activity first.
+    entries.sort(key=lambda entry: entry[0], reverse=True)
 
-            throw new Error("Please log in again.");
-        }
-
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-            throw new Error(
-                data.detail || "Something went wrong."
-            );
-        }
-
-        return data;
-    }
+    return {"conversations": [entry[1] for entry in entries]}
 
 
-    function showNotice(message) {
-        notice.textContent = message;
-    }
+@router.get("/conversations/{conversation_id}/messages")
+def get_private_messages(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_conversation_for_user(conversation_id, current_user.id, db)
+
+    rows = (
+        db.query(PrivateMessage, User.username)
+        .join(User, PrivateMessage.sender_id == User.id)
+        .filter(PrivateMessage.conversation_id == conversation_id)
+        .order_by(PrivateMessage.id.desc())
+        .limit(100)
+        .all()
+    )
+
+    rows.reverse()
+
+    everyone, hidden = load_deletions(
+        db, PRIVATE, [message.id for message, _ in rows], current_user.id
+    )
+
+    items = []
+
+    for message, username in rows:
+        if message.id in hidden:
+            continue
+
+        deleted = message.id in everyone
+
+        items.append({
+            "id": message.id,
+            "sender_id": message.sender_id,
+            "username": username,
+            "message": "" if deleted else message.message,
+            "deleted": deleted,
+            "created_at": to_utc_iso(message.created_at),
+        })
+
+    return {"messages": items}
 
 
-    // Compare IDs consistently, even if one is a string.
-    function sameId(first, second) {
-        return (
-            first !== null &&
-            first !== undefined &&
-            second !== null &&
-            second !== undefined &&
-            String(first) === String(second)
-        );
-    }
+@router.post(
+    "/conversations/{conversation_id}/messages",
+    status_code=201,
+)
+def send_private_message(
+    conversation_id: int,
+    payload: PrivateMessageInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_conversation_for_user(conversation_id, current_user.id, db)
 
+    if not private_message_limiter.allow(current_user.id):
+        raise HTTPException(
+            status_code=429,
+            detail="You're sending messages too fast. Please slow down.",
+        )
 
-    function formatTime(value) {
-        if (!value) {
-            return "";
-        }
+    message_text = payload.message.strip()
 
-        const date = new Date(value);
+    if not message_text:
+        raise HTTPException(
+            status_code=422,
+            detail="Message cannot be empty.",
+        )
 
-        if (Number.isNaN(date.getTime())) {
-            return "";
-        }
+    new_message = PrivateMessage(
+        conversation_id=conversation_id,
+        sender_id=current_user.id,
+        message=message_text,
+        created_at=datetime.now(timezone.utc),
+    )
 
-        return date.toLocaleString();
-    }
+    db.add(new_message)
+    db.commit()
+    db.refresh(new_message)
 
-
-    // A short time for the sidebar: the hour today, otherwise the date.
-    function shortTime(value) {
-        if (!value) {
-            return "";
-        }
-
-        const date = new Date(value);
-
-        if (Number.isNaN(date.getTime())) {
-            return "";
-        }
-
-        const now = new Date();
-
-        if (date.toDateString() === now.toDateString()) {
-            return date.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit"
-            });
-        }
-
-        return date.toLocaleDateString([], {
-            day: "numeric",
-            month: "short"
-        });
-    }
-
-
-    // Display conversations in the sidebar.
-    function renderConversations() {
-        conversationList.replaceChildren();
-
-        if (conversations.length === 0) {
-            const empty = document.createElement("p");
-
-            empty.className = "notice";
-            empty.textContent = "No conversations yet.";
-
-            conversationList.appendChild(empty);
-            return;
-        }
-
-        for (const conversation of conversations) {
-            const isActive = sameId(conversation.id, activeConversationId);
-
-            // The conversation you are looking at counts as read.
-            const unread = isActive ? 0 : (conversation.unread || 0);
-
-            const button = document.createElement("button");
-
-            button.type = "button";
-            button.className = "conversation";
-
-            if (isActive) {
-                button.classList.add("active");
-            }
-
-            if (unread > 0) {
-                button.classList.add("has-unread");
-            }
-
-            const top = document.createElement("div");
-            top.className = "conv-top";
-
-            const username = document.createElement("span");
-            username.className = "conv-name";
-            username.textContent =
-                conversation.other_user?.username || "User";
-
-            const time = document.createElement("span");
-            time.className = "conv-time";
-            time.textContent = conversation.last_message
-                ? shortTime(conversation.last_message.created_at)
-                : "";
-
-            top.append(username, time);
-
-            const bottom = document.createElement("div");
-            bottom.className = "conv-bottom";
-
-            const preview = document.createElement("span");
-            preview.className = "conv-preview";
-
-            if (conversation.last_message) {
-                preview.textContent =
-                    (conversation.last_message.mine ? "You: " : "") +
-                    conversation.last_message.text;
-            } else {
-                preview.textContent = "No messages yet";
-            }
-
-            bottom.appendChild(preview);
-
-            if (unread > 0) {
-                const badge = document.createElement("span");
-                badge.className = "unread-badge";
-                badge.textContent = unread > 99 ? "99+" : String(unread);
-                bottom.appendChild(badge);
-            }
-
-            button.append(top, bottom);
-
-            button.addEventListener("click", async () => {
-                await openConversation(conversation.id);
-            });
-
-            conversationList.appendChild(button);
+    return {
+        "message": {
+            "id": new_message.id,
+            "sender_id": current_user.id,
+            "username": current_user.username,
+            "message": new_message.message,
+            "deleted": False,
+            "created_at": to_utc_iso(new_message.created_at),
         }
     }
 
 
-    // Load the current user's conversations.
-    async function loadConversations() {
-        const data = await apiRequest("/private/conversations");
-
-        conversations = Array.isArray(data.conversations)
-            ? data.conversations
-            : [];
-
-        renderConversations();
-    }
-
-
-    /*
-     * Tell the server that everything up to this message has been read,
-     * but only when the page is visible and the id has changed.
-     */
-    function markRead(conversationId, newestId) {
-        if (document.hidden || newestId === undefined || newestId === null) {
-            return;
-        }
-
-        const key = String(conversationId);
-
-        if (lastMarkedRead.get(key) === newestId) {
-            return;
-        }
-
-        lastMarkedRead.set(key, newestId);
-
-        const conversation = conversations.find(
-            item => sameId(item.id, conversationId)
-        );
-
-        if (conversation && conversation.unread) {
-            conversation.unread = 0;
-            renderConversations();
-        }
-
-        fetch(`/private/conversations/${conversationId}/read`, {
-            method: "POST",
-            credentials: "same-origin",
-        }).catch(() => {
-            // Try again at the next check.
-            lastMarkedRead.delete(key);
-        });
-    }
-
-
-    /*
-     * Identify the message sender.
-     *
-     * First, compare the user IDs.
-     * If the IDs are missing or don't match, check the sender's username
-     * against the logged-in username as a fallback.
-     */
-    function isOwnMessage(message) {
-        if (!currentUser) {
-            return false;
-        }
-
-        const senderId =
-            message.sender_id ??
-            message.user_id ??
-            message.sender?.id;
-
-        if (sameId(senderId, currentUser.id)) {
-            return true;
-        }
-
-        const senderUsername =
-            message.username ??
-            message.sender_username ??
-            message.sender?.username;
-
-        return Boolean(
-            senderUsername &&
-            currentUser.username &&
-            senderUsername.toLowerCase() ===
-                currentUser.username.toLowerCase()
-        );
-    }
-
-
-    // Load and display messages in the selected conversation.
-    async function loadMessages() {
-        if (activeConversationId === null) {
-            return;
-        }
-
-        const conversationId = activeConversationId;
-        const conversationKey = String(conversationId);
-
-        // Don't send another request while this conversation is loading.
-        if (loadingConversations.has(conversationKey)) {
-            return;
-        }
-
-        loadingConversations.add(conversationKey);
-
-        try {
-            const data = await apiRequest(
-                `/private/conversations/${conversationId}/messages`
-            );
-
-            // The user might have switched conversations while waiting.
-            if (!sameId(conversationId, activeConversationId)) {
-                return;
-            }
-
-            const messages = Array.isArray(data.messages)
-                ? data.messages
-                : [];
-
-            // The conversation is open and visible, so its newest message counts as read.
-            if (messages.length > 0) {
-                markRead(conversationId, messages[messages.length - 1].id);
-            }
-
-            /*
-             * Only redraw the message list when its data changes.
-             * This prevents the interface from repeatedly flickering.
-             */
-            const signature = JSON.stringify(messages);
-
-            if (signature === lastMessagesSignature) {
-                return;
-            }
-
-            const wasAtBottom =
-                messagesContainer.scrollHeight -
-                messagesContainer.scrollTop -
-                messagesContainer.clientHeight < 100;
-
-            const hadMessages =
-                messagesContainer.querySelector(".message") !== null;
-
-            messagesContainer.replaceChildren();
-
-            if (messages.length === 0) {
-                const empty = document.createElement("p");
-
-                empty.className = "empty-state";
-                empty.textContent = "No messages yet. Say hello!";
-
-                messagesContainer.appendChild(empty);
-
-                lastMessagesSignature = signature;
-                return;
-            }
-
-            for (const message of messages) {
-                const bubble = document.createElement("div");
-
-                bubble.className = "message";
-
-                const mine = isOwnMessage(message);
-
-                if (mine) {
-                    bubble.classList.add("mine");
-                }
-
-                const sender = document.createElement("div");
-
-                sender.className = "sender";
-
-                sender.textContent = mine
-                    ? "You"
-                    : (
-                        message.username ||
-                        message.sender_username ||
-                        message.sender?.username ||
-                        "User"
-                    );
-
-                const text = document.createElement("div");
-
-                text.className = "text";
-                text.textContent = message.message ?? "";
-
-                const time = document.createElement("time");
-
-                time.textContent = formatTime(message.created_at);
-
-                bubble.append(sender, text, time);
-
-                messagesContainer.appendChild(bubble);
-            }
-
-            lastMessagesSignature = signature;
-
-            // Scroll down when opening a chat or when already near the bottom.
-            if (!hadMessages || wasAtBottom) {
-                messagesContainer.scrollTop =
-                    messagesContainer.scrollHeight;
-            }
-
-        } finally {
-            loadingConversations.delete(conversationKey);
-        }
-    }
-
-
-    // Open a conversation and refresh its messages periodically.
-    async function openConversation(conversationId) {
-        activeConversationId = conversationId;
-
-        // Force the selected conversation to render its own messages.
-        lastMessagesSignature = null;
-
-        const conversation = conversations.find(
-            item => sameId(item.id, conversationId)
-        );
-
-        chatTitle.textContent = conversation
-            ? conversation.other_user?.username || "Private Conversation"
-            : "Private Conversation";
-
-        messageInput.disabled = false;
-        sendButton.disabled = false;
-
-        statusText.textContent = "Private conversation";
-        showNotice("");
-
-        renderConversations();
-
-        if (refreshTimer !== null) {
-            clearInterval(refreshTimer);
-            refreshTimer = null;
-        }
-
-        // Load messages immediately instead of waiting for the timer.
-        try {
-            await loadMessages();
-        } catch (error) {
-            showNotice(error.message);
-        }
-
-        // Check for new messages every 3 seconds, but not while the tab is hidden.
-        refreshTimer = setInterval(async () => {
-            if (document.hidden) {
-                return;
-            }
-
-            try {
-                await loadMessages();
-            } catch (error) {
-                showNotice(error.message);
-            }
-        }, 3000);
-    }
-
-
-    // Find an existing conversation or create one using a user ID.
-    async function openConversationWithUser(userId) {
-        const numericUserId = Number(userId);
-
-        if (
-            !Number.isInteger(numericUserId) ||
-            numericUserId <= 0
-        ) {
-            showNotice("The selected user ID is invalid.");
-            return;
-        }
-
-        if (sameId(numericUserId, currentUser.id)) {
-            showNotice("You cannot message yourself.");
-            return;
-        }
-
-        try {
-            showNotice("Opening private conversation...");
-
-            const data = await apiRequest(
-                `/private/conversations?other_user_id=${encodeURIComponent(numericUserId)}`,
-                {
-                    method: "POST",
-                }
-            );
-
-            await loadConversations();
-
-            await openConversation(data.id);
-
-            // Remove the selected user ID from the address bar.
-            window.history.replaceState(
-                {},
-                "",
-                "/private/messages"
-            );
-
-        } catch (error) {
-            showNotice(error.message);
-        }
-    }
-
-
-    // Send a private message.
-    messageForm.addEventListener("submit", async event => {
-        event.preventDefault();
-
-        if (activeConversationId === null) {
-            showNotice("Select a conversation first.");
-            return;
-        }
-
-        const message = messageInput.value.trim();
-
-        if (!message) {
-            showNotice("Enter a message first.");
-            return;
-        }
-
-        const conversationId = activeConversationId;
-
-        sendButton.disabled = true;
-        showNotice("");
-
-        try {
-            await apiRequest(
-                `/private/conversations/${conversationId}/messages`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        message: message,
-                    }),
-                }
-            );
-
-            messageInput.value = "";
-
-            // Display the sent message immediately after the server accepts it.
-            lastMessagesSignature = null;
-            await loadMessages();
-
-            // Update the preview in the sidebar straight away.
-            loadConversations().catch(() => {});
-
-        } catch (error) {
-            showNotice(error.message);
-
-        } finally {
-            sendButton.disabled =
-                activeConversationId === null;
-
-            if (activeConversationId !== null) {
-                messageInput.focus();
-            }
-        }
-    });
-
-
-    // Refresh the sidebar (previews and unread badges) every 5 seconds while the tab is visible.
-    setInterval(() => {
-        if (document.hidden || currentUser === null) {
-            return;
-        }
-
-        loadConversations().catch(() => {});
-    }, 5000);
-
-
-    // When you come back to the tab, refresh straight away.
-    document.addEventListener("visibilitychange", () => {
-        if (document.hidden || currentUser === null) {
-            return;
-        }
-
-        loadConversations().catch(() => {});
-        loadMessages().catch(() => {});
-    });
-
-
-    // Initialise the page.
-    async function initialise() {
-        try {
-            const userData = await apiRequest("/auth/me");
-            currentUser = userData.user;
-            await loadConversations();
-
-            // Check whether Group Chat sent us a selected user ID.
-            const urlParams = new URLSearchParams(
-                window.location.search
-            );
-
-            const selectedUserId = urlParams.get("user_id");
-
-            if (selectedUserId !== null) {
-                await openConversationWithUser(selectedUserId);
-                return;
-            }
-
-            // Open the first (most recent) conversation if one is available.
-            if (conversations.length > 0) {
-                await openConversation(conversations[0].id);
-            }
-
-        } catch (error) {
-            showNotice(error.message);
-        }
-    }
-
-
-    initialise();
-
-
-    // Stop polling when the user leaves the page.
-    window.addEventListener("beforeunload", function () {
-        if (refreshTimer !== null) {
-            clearInterval(refreshTimer);
-        }
-    });
-</script>
-
-</body>
-</html>
+@router.post("/conversations/{conversation_id}/messages/{message_id}/delete")
+def delete_private_message(
+    conversation_id: int,
+    message_id: int,
+    payload: DeleteInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conversation = get_conversation_for_user(conversation_id, current_user.id, db)
+
+    if not delete_limiter.allow(current_user.id):
+        raise HTTPException(status_code=429, detail="Too many deletes. Please wait a minute.")
+
+    message = (
+        db.query(PrivateMessage)
+        .filter(
+            PrivateMessage.id == message_id,
+            PrivateMessage.conversation_id == conversation_id,
+        )
+        .first()
+    )
+
+    # Only the sender can delete a message.
+    if message is None or message.sender_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    if payload.scope == "self":
+        record_deletion(db, PRIVATE, message_id, current_user.id, "self")
+        return {"ok": True}
+
+    everyone, _ = load_deletions(db, PRIVATE, [message_id], current_user.id)
+
+    if message_id in everyone:
+        raise HTTPException(status_code=400, detail="This message is already deleted.")
+
+    other_id = (
+        conversation.user_two_id
+        if conversation.user_one_id == current_user.id
+        else conversation.user_one_id
+    )
+
+    seen_by_other = (
+        db.query(PrivateRead.id)
+        .filter(
+            PrivateRead.conversation_id == conversation_id,
+            PrivateRead.user_id == other_id,
+            PrivateRead.last_read_id >= message_id,
+        )
+        .first()
+        is not None
+    )
+
+    if seen_by_other:
+        raise HTTPException(status_code=409, detail=SEEN_DETAIL)
+
+    record_deletion(db, PRIVATE, message_id, current_user.id, "everyone")
+
+    return {"ok": True}
+
+
+@router.post("/conversations/{conversation_id}/read")
+def mark_conversation_read(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    get_conversation_for_user(conversation_id, current_user.id, db)
+
+    if not read_limiter.allow(current_user.id):
+        raise HTTPException(status_code=429, detail="Too many requests. Please slow down.")
+
+    newest = (
+        db.query(func.max(PrivateMessage.id))
+        .filter(PrivateMessage.conversation_id == conversation_id)
+        .scalar()
+    ) or 0
+
+    row = (
+        db.query(PrivateRead)
+        .filter(
+            PrivateRead.conversation_id == conversation_id,
+            PrivateRead.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    now = datetime.now(timezone.utc)
+
+    if row is None:
+        db.add(PrivateRead(
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            last_read_id=newest,
+            updated_at=now,
+        ))
+
+        try:
+            db.commit()
+        except IntegrityError:
+            # Another request created the row at the same moment: update that one.
+            db.rollback()
+            row = (
+                db.query(PrivateRead)
+                .filter(
+                    PrivateRead.conversation_id == conversation_id,
+                    PrivateRead.user_id == current_user.id,
+                )
+                .first()
+            )
+
+            if row is not None and newest > row.last_read_id:
+                row.last_read_id = newest
+                row.updated_at = now
+                db.commit()
+
+    elif newest > row.last_read_id:
+        row.last_read_id = newest
+        row.updated_at = now
+        db.commit()
+
+    return {"ok": True}
