@@ -12,11 +12,21 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import ALLOWED_ORIGINS
 from app.database import SessionLocal
-from app.models import ChatMessage, User
+from app.deletions import (
+    GROUP,
+    SEEN_DETAIL,
+    DeleteInput,
+    delete_limiter,
+    load_deletions,
+    record_deletion,
+)
+from app.models import ChatMessage, GroupRead, User
 from app.ratelimit import RateLimiter
 from app.routers.auth import get_current_user, get_db
 from app.security import COOKIE_NAME, read_auth_token
@@ -28,10 +38,16 @@ templates = Jinja2Templates(directory="app/templates")
 
 # 5 group chat messages per 10 seconds for each user.
 message_limiter = RateLimiter(max_events=5, per_seconds=10)
+# 30 "I have seen up to here" reports per minute for each user.
+read_limiter = RateLimiter(max_events=30, per_seconds=60)
 
 
 class MessageInput(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
+
+
+class ReadInput(BaseModel):
+    last_id: int = Field(ge=0)
 
 
 class ConnectionManager:
@@ -77,6 +93,41 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+
+def visible_group_messages(db: Session, rows: list, viewer_id: int) -> list:
+    """Turn (message, username) rows into JSON, hiding or replacing deleted messages."""
+    everyone, hidden = load_deletions(db, GROUP, [message.id for message, _ in rows], viewer_id)
+
+    # The newest message that any other user's screen has displayed.
+    seen_up_to = (
+        db.query(func.max(GroupRead.last_read_id))
+        .filter(GroupRead.user_id != viewer_id)
+        .scalar()
+    ) or 0
+
+    items = []
+
+    for message, username in rows:
+        if message.id in hidden:
+            continue
+
+        deleted = message.id in everyone
+
+        items.append({
+            "id": message.id,
+            "username": username,
+            "message": "" if deleted else message.message,
+            "deleted": deleted,
+            "can_unsend": (
+                not deleted
+                and message.user_id == viewer_id
+                and message.id > seen_up_to
+            ),
+            "created_at": to_utc_iso(message.created_at),
+        })
+
+    return items
 
 
 @router.get("/chat/users")
@@ -130,7 +181,7 @@ def get_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    messages = (
+    rows = (
         db.query(ChatMessage, User.username)
         .join(User, ChatMessage.user_id == User.id)
         .order_by(ChatMessage.id.desc())
@@ -138,19 +189,9 @@ def get_messages(
         .all()
     )
 
-    messages.reverse()
+    rows.reverse()
 
-    return {
-        "messages": [
-            {
-                "id": message.id,
-                "username": username,
-                "message": message.message,
-                "created_at": to_utc_iso(message.created_at),
-            }
-            for message, username in messages
-        ]
-    }
+    return {"messages": visible_group_messages(db, rows, current_user.id)}
 
 
 @router.post("/chat/messages", status_code=201)
@@ -188,9 +229,95 @@ def send_message(
             "id": new_message.id,
             "username": current_user.username,
             "message": new_message.message,
+            "deleted": False,
+            "can_unsend": True,
             "created_at": to_utc_iso(new_message.created_at),
         }
     }
+
+
+@router.post("/chat/read")
+def mark_group_read(
+    payload: ReadInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The browser reports the newest message it has displayed while the page was visible."""
+    if not read_limiter.allow(current_user.id):
+        raise HTTPException(status_code=429, detail="Too many requests. Please slow down.")
+
+    newest = db.query(func.max(ChatMessage.id)).scalar() or 0
+    last_id = min(payload.last_id, newest)
+    now = datetime.now(timezone.utc)
+
+    row = db.query(GroupRead).filter(GroupRead.user_id == current_user.id).first()
+
+    if row is None:
+        db.add(GroupRead(user_id=current_user.id, last_read_id=last_id, updated_at=now))
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            row = db.query(GroupRead).filter(GroupRead.user_id == current_user.id).first()
+
+            if row is not None and last_id > row.last_read_id:
+                row.last_read_id = last_id
+                row.updated_at = now
+                db.commit()
+
+    elif last_id > row.last_read_id:
+        row.last_read_id = last_id
+        row.updated_at = now
+        db.commit()
+
+    return {"ok": True}
+
+
+@router.post("/chat/messages/{message_id}/delete")
+async def delete_group_message(
+    message_id: int,
+    payload: DeleteInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not delete_limiter.allow(current_user.id):
+        raise HTTPException(status_code=429, detail="Too many deletes. Please wait a minute.")
+
+    message = db.get(ChatMessage, message_id)
+
+    # Only the sender can delete a message.
+    if message is None or message.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    if payload.scope == "self":
+        record_deletion(db, GROUP, message_id, current_user.id, "self")
+        return {"ok": True}
+
+    everyone, _ = load_deletions(db, GROUP, [message_id], current_user.id)
+
+    if message_id in everyone:
+        raise HTTPException(status_code=400, detail="This message is already deleted.")
+
+    seen_by_someone = (
+        db.query(GroupRead.id)
+        .filter(GroupRead.user_id != current_user.id, GroupRead.last_read_id >= message_id)
+        .first()
+        is not None
+    )
+
+    if seen_by_someone:
+        raise HTTPException(status_code=409, detail=SEEN_DETAIL)
+
+    record_deletion(db, GROUP, message_id, current_user.id, "everyone")
+
+    await manager.broadcast({
+        "type": "deleted",
+        "id": message_id,
+        "username": current_user.username,
+    })
+
+    return {"ok": True}
 
 
 @router.websocket("/ws/chat")
@@ -255,15 +382,7 @@ async def websocket_chat(websocket: WebSocket):
 
             history.reverse()
 
-            messages = [
-                {
-                    "id": message.id,
-                    "username": message_username,
-                    "message": message.message,
-                    "created_at": to_utc_iso(message.created_at),
-                }
-                for message, message_username in history
-            ]
+            messages = visible_group_messages(db, history, user_id)
 
         finally:
             db.close()
@@ -343,6 +462,8 @@ async def websocket_chat(websocket: WebSocket):
                     "id": new_message.id,
                     "username": username,
                     "message": new_message.message,
+                    "deleted": False,
+                    "can_unsend": True,
                     "created_at": to_utc_iso(new_message.created_at),
                 }
 

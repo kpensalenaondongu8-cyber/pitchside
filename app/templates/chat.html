@@ -337,17 +337,113 @@
 
 .delete-button {
     margin-top: 2px;
-    padding: 6px 8px;
+    padding: 2px 10px;
     background: none;
     border: 0;
     color: #8999a7;
-    font-size: 11px;
+    font-size: 18px;
+    line-height: 1;
     cursor: pointer;
 }
 
 .delete-button:hover {
-    color: #ff8a80;
-} 
+    color: #ffffff;
+}
+        .sheet-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.55);
+        }
+
+        .sheet-backdrop[hidden] {
+            display: none;
+        }
+
+        .sheet {
+            width: 100%;
+            max-width: 420px;
+            padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+            background: #1c2935;
+            border: 1px solid #30404d;
+            border-radius: 16px 16px 0 0;
+            animation: sheet-up 0.18s ease-out;
+        }
+
+        @keyframes sheet-up {
+            from { transform: translateY(24px); opacity: 0; }
+            to { transform: none; opacity: 1; }
+        }
+
+        .sheet-handle {
+            width: 40px;
+            height: 4px;
+            margin: 4px auto 12px;
+            border-radius: 2px;
+            background: #40515f;
+        }
+
+        .sheet h3 {
+            margin: 0 0 10px;
+            font-size: 1.05rem;
+            color: #ffffff;
+        }
+
+        .sheet-btn {
+            display: block;
+            width: 100%;
+            margin-top: 8px;
+            padding: 12px 14px;
+            text-align: left;
+            color: #ffffff;
+            background: #253447;
+            border: 0;
+            border-radius: 10px;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .sheet-btn small {
+            display: block;
+            margin-top: 2px;
+            color: #aab8c4;
+            font-size: 0.8rem;
+        }
+
+        .sheet-btn.danger span {
+            color: #ff8a80;
+        }
+
+        .sheet-btn.quiet {
+            text-align: center;
+            background: transparent;
+            color: #aab8c4;
+        }
+
+        .sheet-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .sheet-note {
+            min-height: 18px;
+            margin: 10px 0 0;
+            color: #f5d58b;
+            font-size: 0.85rem;
+        }
+
+        @media (min-width: 600px) {
+            .sheet-backdrop {
+                align-items: center;
+            }
+
+            .sheet {
+                border-radius: 16px;
+            }
+        }
     </style>
 </head>
 
@@ -406,7 +502,26 @@
 
         </section>
     </main>
+      <div id="sheet-backdrop" class="sheet-backdrop" hidden>
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+            <div class="sheet-handle"></div>
+            <h3 id="sheet-title">Delete message?</h3>
 
+            <button type="button" id="sheet-everyone" class="sheet-btn danger">
+                <span>Delete for everyone</span>
+                <small id="sheet-everyone-hint">Everyone will see that you deleted a message.</small>
+            </button>
+
+            <button type="button" id="sheet-self" class="sheet-btn">
+                <span>Delete for me</span>
+                <small>Only you stop seeing it. Other people still can.</small>
+            </button>
+
+            <p id="sheet-note" class="sheet-note" role="status" aria-live="polite"></p>
+
+            <button type="button" id="sheet-cancel" class="sheet-btn quiet">Cancel</button>
+        </div>
+    </div>
     <script>
         const messagesContainer = document.getElementById("messages");
         const form = document.getElementById("chat-form");
@@ -521,39 +636,113 @@
                 return { ok: false, status: 0, detail: "Could not reach the server." };
             }
         }
+           /* The "Delete message?" panel. */
+    const sheetBackdrop = document.getElementById("sheet-backdrop");
+    const sheetEveryone = document.getElementById("sheet-everyone");
+    const sheetEveryoneHint = document.getElementById("sheet-everyone-hint");
+    const sheetSelf = document.getElementById("sheet-self");
+    const sheetCancel = document.getElementById("sheet-cancel");
+    const sheetNote = document.getElementById("sheet-note");
 
-        async function deleteMessage(id) {
-            if (!window.confirm("Delete this message?")) {
-                return;
-            }
+    let sheetOptions = null;
+    let sheetRestricted = false;
 
-            const result = await sendDelete(id, "everyone");
+    function closeDeleteSheet() {
+        sheetBackdrop.hidden = true;
+        sheetOptions = null;
+    }
 
-            if (result.ok) {
-                markDeleted(id, currentUsername);
-                return;
-            }
+    function restrictSheet(text) {
+        sheetRestricted = true;
+        sheetEveryone.disabled = true;
+        sheetEveryoneHint.textContent = "Not available";
+        sheetNote.textContent = text;
+    }
 
-            if (result.status === 409) {
-                if (!window.confirm(
-                    "Someone has already seen this message, so it cannot be deleted " +
-                    "for everyone. Delete it just for you?"
-                )) {
-                    return;
+    function openDeleteSheet(options) {
+        sheetOptions = options;
+        sheetRestricted = false;
+        sheetEveryone.disabled = false;
+        sheetSelf.disabled = false;
+        sheetEveryoneHint.textContent = "Everyone will see that you deleted a message.";
+        sheetNote.textContent = "";
+
+        if (options.canUnsend === false) {
+            restrictSheet(options.restrictedText);
+        }
+
+        sheetBackdrop.hidden = false;
+        (sheetRestricted ? sheetSelf : sheetEveryone).focus();
+    }
+
+    async function runSheetAction(which) {
+        if (!sheetOptions) {
+            return;
+        }
+
+        const options = sheetOptions;
+
+        sheetEveryone.disabled = true;
+        sheetSelf.disabled = true;
+        sheetNote.textContent = "";
+
+        const result = which === "everyone"
+            ? await options.onEveryone()
+            : await options.onSelf();
+
+        if (result.ok) {
+            closeDeleteSheet();
+            return;
+        }
+
+        sheetSelf.disabled = false;
+
+        if (result.status === 409) {
+            restrictSheet(options.restrictedText);
+        } else {
+            sheetEveryone.disabled = sheetRestricted;
+            sheetNote.textContent = result.detail;
+        }
+    }
+
+    sheetEveryone.addEventListener("click", () => runSheetAction("everyone"));
+    sheetSelf.addEventListener("click", () => runSheetAction("self"));
+    sheetCancel.addEventListener("click", closeDeleteSheet);
+
+    sheetBackdrop.addEventListener("click", (event) => {
+        if (event.target === sheetBackdrop) {
+            closeDeleteSheet();
+        }
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !sheetBackdrop.hidden) {
+            closeDeleteSheet();
+        }
+    });
+                function deleteMessage(id, canUnsend) {
+            openDeleteSheet({
+                canUnsend: canUnsend,
+                restrictedText: "Someone has already seen this message, so it can only be deleted for you.",
+                onEveryone: async function () {
+                    const result = await sendDelete(id, "everyone");
+
+                    if (result.ok) {
+                        markDeleted(id, currentUsername);
+                    }
+
+                    return result;
+                },
+                onSelf: async function () {
+                    const result = await sendDelete(id, "self");
+
+                    if (result.ok) {
+                        removeMessageFromView(id);
+                    }
+
+                    return result;
                 }
-
-                const own = await sendDelete(id, "self");
-
-                if (own.ok) {
-                    removeMessageFromView(id);
-                } else {
-                    statusElement.textContent = own.detail;
-                }
-
-                return;
-            }
-
-            statusElement.textContent = result.detail;
+            });
         }
 
         /* Display one group chat message. */
@@ -822,35 +1011,56 @@
                     "Chat connection problem. Reconnecting...";
             });
 
-            socket.addEventListener("close", function (event) {
-                sendButton.disabled = true;
+                      socket.addEventListener("message", function (event) {
+                let data;
 
-                if (manuallyClosed) {
+                try {
+                    data = JSON.parse(event.data);
+                } catch {
+                    statusElement.textContent =
+                        "Received an invalid server response.";
                     return;
                 }
 
-                if (event.code === 4401) {
-                    window.location.href =
-                        "/auth/login?next=/chat";
+                /* Update online supporters when presence changes. */
+                if (data.type === "presence") {
+                    renderOnlineUsers();
                     return;
                 }
 
-                statusElement.textContent =
-                    "Disconnected. Reconnecting...";
+                /* Display initial group chat history. */
+                if (data.type === "history") {
+                    messagesContainer.replaceChildren();
+                    displayedMessageIds.clear();
+                    messageElements.clear();
+                    newestShown = 0;
 
-                const delay = Math.min(
-                    1000 * (2 ** reconnectAttempts),
-                    15000
-                );
+                    for (const message of data.messages) {
+                        addMessage(message);
+                    }
 
-                reconnectAttempts++;
+                    showEmptyState();
+                    return;
+                }
 
-                reconnectTimer = setTimeout(
-                    connectWebSocket,
-                    delay
-                );
+                /* Display a new group chat message. */
+                if (data.type === "message") {
+                    addMessage(data.message);
+                    return;
+                }
+
+                /* Someone deleted a message for everyone. */
+                if (data.type === "deleted") {
+                    markDeleted(data.id, data.username);
+                    return;
+                }
+
+                /* Display server-side errors. */
+                if (data.type === "error") {
+                    statusElement.textContent =
+                        data.detail || "Unable to process message.";
+                }
             });
-        }
 
         /* Send a group chat message. */
 

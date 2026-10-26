@@ -9,6 +9,16 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.deletions import (
+    PRIVATE,
+    SEEN_DETAIL,
+    DeleteInput,
+    deleted_for_everyone_ids,
+    delete_limiter,
+    hidden_ids,
+    load_deletions,
+    record_deletion,
+)
 from app.models import PrivateConversation, PrivateMessage, PrivateRead, User
 from app.ratelimit import RateLimiter
 from app.routers.auth import get_current_user, get_db
@@ -123,6 +133,7 @@ def total_unread(
             ),
             PrivateMessage.sender_id != current_user.id,
             PrivateMessage.id > func.coalesce(PrivateRead.last_read_id, 0),
+            ~PrivateMessage.id.in_(deleted_for_everyone_ids(PRIVATE)),
         )
         .scalar()
     )
@@ -226,11 +237,14 @@ def list_conversations(
         for user in db.query(User).filter(User.id.in_({other_id(c) for c in conversations})).all()
     }
 
-    # One query for the newest message in each conversation.
+    # One query for the newest message in each conversation, skipping the ones this user hid.
     newest_ids = [
         row[1]
         for row in db.query(PrivateMessage.conversation_id, func.max(PrivateMessage.id))
-        .filter(PrivateMessage.conversation_id.in_(conversation_ids))
+        .filter(
+            PrivateMessage.conversation_id.in_(conversation_ids),
+            ~PrivateMessage.id.in_(hidden_ids(PRIVATE, current_user.id)),
+        )
         .group_by(PrivateMessage.conversation_id)
         .all()
     ]
@@ -241,7 +255,11 @@ def list_conversations(
         for message in db.query(PrivateMessage).filter(PrivateMessage.id.in_(newest_ids)).all():
             last_by_conversation[message.conversation_id] = message
 
-    # One query for the unread count in each conversation.
+    deleted_for_all, _ = load_deletions(
+        db, PRIVATE, [m.id for m in last_by_conversation.values()], current_user.id
+    )
+
+    # One query for the unread count in each conversation (deleted messages do not count).
     unread_rows = (
         db.query(PrivateMessage.conversation_id, func.count(PrivateMessage.id))
         .outerjoin(
@@ -255,6 +273,7 @@ def list_conversations(
             PrivateMessage.conversation_id.in_(conversation_ids),
             PrivateMessage.sender_id != current_user.id,
             PrivateMessage.id > func.coalesce(PrivateRead.last_read_id, 0),
+            ~PrivateMessage.id.in_(deleted_for_everyone_ids(PRIVATE)),
         )
         .group_by(PrivateMessage.conversation_id)
         .all()
@@ -272,6 +291,25 @@ def list_conversations(
         last = last_by_conversation.get(conversation.id)
         activity = as_utc(last.created_at if last else conversation.created_at)
 
+        last_message = None
+
+        if last is not None:
+            if last.id in deleted_for_all:
+                mine = last.sender_id == current_user.id
+                last_message = {
+                    "text": "You deleted a message" if mine else "This message was deleted",
+                    "created_at": to_utc_iso(last.created_at),
+                    "mine": False,
+                    "deleted": True,
+                }
+            else:
+                last_message = {
+                    "text": make_preview(last.message),
+                    "created_at": to_utc_iso(last.created_at),
+                    "mine": last.sender_id == current_user.id,
+                    "deleted": False,
+                }
+
         entries.append((activity, {
             "id": conversation.id,
             "other_user": {
@@ -279,15 +317,7 @@ def list_conversations(
                 "username": other_user.username,
             },
             "created_at": to_utc_iso(conversation.created_at),
-            "last_message": (
-                {
-                    "text": make_preview(last.message),
-                    "created_at": to_utc_iso(last.created_at),
-                    "mine": last.sender_id == current_user.id,
-                }
-                if last
-                else None
-            ),
+            "last_message": last_message,
             "unread": unread_by_conversation.get(conversation.id, 0),
         }))
 
@@ -303,9 +333,25 @@ def get_private_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    get_conversation_for_user(conversation_id, current_user.id, db)
+    conversation = get_conversation_for_user(conversation_id, current_user.id, db)
 
-    messages = (
+    other_id = (
+        conversation.user_two_id
+        if conversation.user_one_id == current_user.id
+        else conversation.user_one_id
+    )
+
+    # The newest message the other person has read in this conversation.
+    other_read = (
+        db.query(PrivateRead.last_read_id)
+        .filter(
+            PrivateRead.conversation_id == conversation_id,
+            PrivateRead.user_id == other_id,
+        )
+        .scalar()
+    ) or 0
+
+    rows = (
         db.query(PrivateMessage, User.username)
         .join(User, PrivateMessage.sender_id == User.id)
         .filter(PrivateMessage.conversation_id == conversation_id)
@@ -314,20 +360,35 @@ def get_private_messages(
         .all()
     )
 
-    messages.reverse()
+    rows.reverse()
 
-    return {
-        "messages": [
-            {
-                "id": message.id,
-                "sender_id": message.sender_id,
-                "username": username,
-                "message": message.message,
-                "created_at": to_utc_iso(message.created_at),
-            }
-            for message, username in messages
-        ]
-    }
+    everyone, hidden = load_deletions(
+        db, PRIVATE, [message.id for message, _ in rows], current_user.id
+    )
+
+    items = []
+
+    for message, username in rows:
+        if message.id in hidden:
+            continue
+
+        deleted = message.id in everyone
+
+        items.append({
+            "id": message.id,
+            "sender_id": message.sender_id,
+            "username": username,
+            "message": "" if deleted else message.message,
+            "deleted": deleted,
+            "can_unsend": (
+                not deleted
+                and message.sender_id == current_user.id
+                and message.id > other_read
+            ),
+            "created_at": to_utc_iso(message.created_at),
+        })
+
+    return {"messages": items}
 
 
 @router.post(
@@ -373,9 +434,70 @@ def send_private_message(
             "sender_id": current_user.id,
             "username": current_user.username,
             "message": new_message.message,
+            "deleted": False,
             "created_at": to_utc_iso(new_message.created_at),
         }
     }
+
+
+@router.post("/conversations/{conversation_id}/messages/{message_id}/delete")
+def delete_private_message(
+    conversation_id: int,
+    message_id: int,
+    payload: DeleteInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conversation = get_conversation_for_user(conversation_id, current_user.id, db)
+
+    if not delete_limiter.allow(current_user.id):
+        raise HTTPException(status_code=429, detail="Too many deletes. Please wait a minute.")
+
+    message = (
+        db.query(PrivateMessage)
+        .filter(
+            PrivateMessage.id == message_id,
+            PrivateMessage.conversation_id == conversation_id,
+        )
+        .first()
+    )
+
+    # Only the sender can delete a message.
+    if message is None or message.sender_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Message not found.")
+
+    if payload.scope == "self":
+        record_deletion(db, PRIVATE, message_id, current_user.id, "self")
+        return {"ok": True}
+
+    everyone, _ = load_deletions(db, PRIVATE, [message_id], current_user.id)
+
+    if message_id in everyone:
+        raise HTTPException(status_code=400, detail="This message is already deleted.")
+
+    other_id = (
+        conversation.user_two_id
+        if conversation.user_one_id == current_user.id
+        else conversation.user_one_id
+    )
+
+    seen_by_other = (
+        db.query(PrivateRead.id)
+        .filter(
+            PrivateRead.conversation_id == conversation_id,
+            PrivateRead.user_id == other_id,
+            PrivateRead.last_read_id >= message_id,
+        )
+        .first()
+        is not None
+    )
+
+    if seen_by_other:
+        raise HTTPException(status_code=409, detail=SEEN_DETAIL)
+
+    record_deletion(db, PRIVATE, message_id, current_user.id, "everyone")
+
+    return {"ok": True}
 
 
 @router.post("/conversations/{conversation_id}/read")
